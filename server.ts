@@ -18,7 +18,7 @@ import { fetchFarmEnvironmentalAnalysis } from './server/nasa.ts';
 import { generateRotationStrategies, simulateClimateScenarios } from './server/rotationEngine.ts';
 import { askAgriAssistant } from './server/aiAssistant.ts';
 import { evaluatePotentialHazards, fetchRealtimeForecast } from './server/weatherHazards.ts';
-import { getSupabaseEdgeStatus, invokeSupabaseEdge, type EdgeAction } from './server/supabaseEdge.ts';
+import { getSupabaseEdgeStatus, invokeSupabaseEdge, resolveSupabaseConfig, type EdgeAction } from './server/supabaseEdge.ts';
 import type { ClimateScenarioParams, Crop, Farm, GeoPoint, User, UserRole } from './src/types.ts';
 
 initDatabase();
@@ -259,6 +259,104 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
 
   writeAuditLog(userRow.id, normalizedEmail, 'USER_LOGIN', 'user', userRow.id, 'Authenticated session issued', req.ip);
   res.json({ token: sessionToken, user: rowToUser(userRow) });
+});
+
+app.post('/api/auth/google', async (req: Request, res: Response) => {
+  const accessToken = String(req.body?.accessToken || '').trim();
+  if (!accessToken) {
+    return res.status(400).json({ error: 'Google sign-in token is required.' });
+  }
+  const { url, key, configured } = resolveSupabaseConfig();
+  if (!configured) {
+    return res.status(503).json({ error: 'Supabase authentication is not configured on this server.' });
+  }
+
+  try {
+    const sbRes = await fetch(`${url}/auth/v1/user`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: key,
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!sbRes.ok) {
+      return res.status(401).json({ error: 'Google sign-in token could not be verified.' });
+    }
+    const sbUser = (await sbRes.json()) as any;
+    const email = String(sbUser?.email || '').trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ error: 'Google account did not provide an email address.' });
+    }
+
+    const displayName = String(
+      sbUser?.user_metadata?.full_name ||
+      sbUser?.user_metadata?.name ||
+      email.split('@')[0]
+    ).trim();
+
+    let userRow = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email) as any;
+    const now = new Date().toISOString();
+
+    if (!userRow) {
+      const id = crypto.randomUUID();
+      db.prepare(
+        `INSERT INTO users (id, email, name, password_hash, role, verified, organization, region, preferred_units, created_at)
+         VALUES (?, ?, ?, ?, 'farmer', 1, '', '', 'metric', ?)`
+      ).run(id, email, displayName, hashPassword(crypto.randomBytes(24).toString('hex')), now);
+      userRow = db.prepare(`SELECT * FROM users WHERE id = ?`).get(id);
+      writeAuditLog(id, email, 'USER_REGISTERED_GOOGLE', 'user', id, 'Farmer registered via Google OAuth', req.ip);
+    } else if (!userRow.active) {
+      return res.status(403).json({ error: 'This account has been deactivated by an administrator.' });
+    } else if (!userRow.verified) {
+      db.prepare(`UPDATE users SET verified = 1 WHERE id = ?`).run(userRow.id);
+      userRow = db.prepare(`SELECT * FROM users WHERE id = ?`).get(userRow.id);
+    }
+
+    const sessionToken = generateToken();
+    db.prepare(`INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)`).run(
+      sessionToken,
+      userRow.id,
+      Date.now() + 7 * 86400 * 1000,
+      now
+    );
+
+    writeAuditLog(userRow.id, email, 'USER_LOGIN_GOOGLE', 'user', userRow.id, 'Authenticated via Google OAuth', req.ip);
+    res.json({ token: sessionToken, user: rowToUser(userRow) });
+  } catch (err: any) {
+    res.status(502).json({ error: err?.message || 'Unable to verify Google sign-in.' });
+  }
+});
+
+app.get(['/auth/callback', '/auth/callback/'], (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!doctype html>
+<html>
+  <head><meta charset="utf-8" /><title>FarmNova AI Sign-In</title></head>
+  <body style="font-family:sans-serif;background:#FAF8F3;color:#132A20;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;">
+    <div style="text-align:center;padding:24px;">
+      <p style="font-size:15px;font-weight:600;margin:0 0 8px;">Completing FarmNova AI sign-in...</p>
+      <p style="font-size:13px;color:#5E6D64;margin:0;">You can close this window if it does not close automatically.</p>
+    </div>
+    <script>
+      (function () {
+        var search = new URLSearchParams(window.location.search);
+        var hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        var payload = {
+          type: 'FARMNOVA_GOOGLE_OAUTH',
+          accessToken: hash.get('access_token') || '',
+          code: search.get('code') || '',
+          errorDescription: search.get('error_description') || hash.get('error_description') || ''
+        };
+        if (window.opener) {
+          window.opener.postMessage(payload, '*');
+          setTimeout(function () { window.close(); }, 150);
+        } else {
+          window.location.replace('/' + window.location.search + window.location.hash);
+        }
+      })();
+    </script>
+  </body>
+</html>`);
 });
 
 app.post('/api/auth/logout', requireAuth, (req: AuthedRequest, res: Response) => {

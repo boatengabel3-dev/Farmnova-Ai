@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowRight, CheckCircle2, Compass, Layers, ShieldCheck, Sprout } from 'lucide-react';
 import { BrandMark } from './BrandMark';
 import { api, setStoredToken } from '../lib/api';
+import { getSupabaseClient, isSupabaseClientConfigured } from '../lib/supabase';
 import { LanguageSelector, useI18n } from '../lib/i18n';
 import heroFarmlandImg from '../assets/images/hero_farmland_aerial_1794715062487.jpg';
 import soilStewardshipImg from '../assets/images/crop_soil_stewardship_1794715063327.jpg';
@@ -27,6 +28,158 @@ export function LandingAuthView({ onAuthenticated }: Props) {
   const [issuedInfo, setIssuedInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [pendingGoogleUrl, setPendingGoogleUrl] = useState<string | null>(null);
+
+  async function completeGoogleSession(accessToken: string) {
+    setGoogleLoading(true);
+    setError(null);
+    try {
+      const res = await api.googleLogin(accessToken);
+      setStoredToken(res.token);
+      onAuthenticated(res.user);
+    } catch (err: any) {
+      setError(err?.message || 'Google sign-in could not be completed.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    let active = true;
+
+    async function checkOAuthCallback() {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const oauthErr = searchParams.get('error_description') || hashParams.get('error_description');
+      if (oauthErr && active) {
+        setError(decodeURIComponent(oauthErr));
+        return;
+      }
+
+      const code = searchParams.get('code');
+      const hasHashToken = hashParams.has('access_token');
+      if (!code && !hasHashToken) return;
+
+      try {
+        let { data } = await supabase!.auth.getSession();
+        if (!data.session && code) {
+          const exchanged = await supabase!.auth.exchangeCodeForSession(code);
+          data = { session: exchanged.data.session };
+        }
+        const token = data.session?.access_token;
+        if (!token || !active) return;
+
+        if (window.opener) {
+          window.opener.postMessage({ type: 'FARMNOVA_GOOGLE_OAUTH', accessToken: token }, '*');
+          window.close();
+          return;
+        }
+
+        window.history.replaceState({}, document.title, window.location.pathname);
+        await completeGoogleSession(token);
+      } catch (err: any) {
+        if (active) setError(err?.message || 'Failed to verify Google login callback.');
+      }
+    }
+
+    checkOAuthCallback();
+
+    const handlePopupMessage = async (event: MessageEvent) => {
+      if (
+        event.origin !== window.location.origin &&
+        !event.origin.endsWith('.run.app') &&
+        !event.origin.includes('localhost')
+      ) {
+        return;
+      }
+      if (event.data?.type !== 'FARMNOVA_GOOGLE_OAUTH') return;
+      setPendingGoogleUrl(null);
+
+      if (event.data.errorDescription) {
+        setError(String(event.data.errorDescription));
+        return;
+      }
+      if (typeof event.data.accessToken === 'string' && event.data.accessToken) {
+        await completeGoogleSession(event.data.accessToken);
+        return;
+      }
+      if (typeof event.data.code === 'string' && event.data.code) {
+        setGoogleLoading(true);
+        try {
+          const { data, error: exErr } = await supabase.auth.exchangeCodeForSession(event.data.code);
+          if (exErr || !data.session?.access_token) {
+            throw exErr || new Error('Could not complete Google authentication.');
+          }
+          await completeGoogleSession(data.session.access_token);
+        } catch (err: any) {
+          setError(err?.message || 'Could not complete Google sign-in.');
+          setGoogleLoading(false);
+        }
+      }
+    };
+
+    window.addEventListener('message', handlePopupMessage);
+    return () => {
+      active = false;
+      window.removeEventListener('message', handlePopupMessage);
+    };
+  }, []);
+
+  async function handleGoogleLogin() {
+    setError(null);
+    setPendingGoogleUrl(null);
+    const supabase = getSupabaseClient();
+    if (!isSupabaseClientConfigured || !supabase) {
+      setError('Supabase authentication is not configured yet.');
+      return;
+    }
+
+    setGoogleLoading(true);
+    try {
+      const inIframe = window.self !== window.top;
+      const redirectTo = inIframe ? `${window.location.origin}/auth/callback` : window.location.origin;
+
+      const { data, error: oauthErr } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (oauthErr) {
+        const msg = oauthErr.message || '';
+        if (msg.toLowerCase().includes('provider') || msg.toLowerCase().includes('not enabled')) {
+          throw new Error(
+            'Google Sign-In is not enabled in your Supabase project yet. Enable Google under Authentication → Providers → Google.'
+          );
+        }
+        throw oauthErr;
+      }
+
+      if (!data?.url) {
+        throw new Error('Could not generate Google authentication URL.');
+      }
+
+      if (inIframe) {
+        const popup = window.open(data.url, 'farmnova_google_oauth', 'width=520,height=660,scrollbars=yes');
+        if (!popup) {
+          setPendingGoogleUrl(data.url);
+          setIssuedInfo('Popup was blocked by your browser. Click the button below to continue with Google.');
+        }
+        setGoogleLoading(false);
+      } else {
+        window.location.assign(data.url);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Google sign-in failed.');
+      setGoogleLoading(false);
+    }
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -34,20 +187,6 @@ export function LandingAuthView({ onAuthenticated }: Props) {
     setLoading(true);
     try {
       const res = await api.login(email, password);
-      setStoredToken(res.token);
-      onAuthenticated(res.user);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function quickDemoLogin(demoEmail: string, demoPass: string) {
-    setError(null);
-    setLoading(true);
-    try {
-      const res = await api.login(demoEmail, demoPass);
       setStoredToken(res.token);
       onAuthenticated(res.user);
     } catch (err: any) {
@@ -474,57 +613,47 @@ export function LandingAuthView({ onAuthenticated }: Props) {
                 )}
               </div>
 
-              {/* Instant Role Demonstration Access */}
-              <div className="mt-6 pt-5 border-t border-[#ECE8DD]">
-                <p className="text-xs font-semibold text-[#5A665E] mb-2.5">
-                  Instant Role Demonstration Accounts
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => quickDemoLogin('kwame.mensah@farmnova.ai', 'FarmerTerra2026!')}
-                    className="text-left px-3 py-2 rounded-lg border border-[#E2DDD1] bg-[#FAF8F3] hover:border-[#0E4D3A] transition-colors"
-                  >
-                    <div className="text-xs font-semibold text-[#132A20]">Farmer Demo</div>
-                    <div className="text-[11px] text-[#5E6D64] truncate">Sample farms · Live weather & NASA</div>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => quickDemoLogin('amina.osei@farmnova.ai', 'ExpertTerra2026!')}
-                    className="text-left px-3 py-2 rounded-lg border border-[#E2DDD1] bg-[#FAF8F3] hover:border-[#0E4D3A] transition-colors"
-                  >
-                    <div className="text-xs font-semibold text-[#132A20]">Agri Expert</div>
-                    <div className="text-[11px] text-[#5E6D64] truncate">Crop DB & field curation</div>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => quickDemoLogin('david.kamau@farmnova.ai', 'ResearchTerra2026!')}
-                    className="text-left px-3 py-2 rounded-lg border border-[#E2DDD1] bg-[#FAF8F3] hover:border-[#0E4D3A] transition-colors"
-                  >
-                    <div className="text-xs font-semibold text-[#132A20]">Researcher</div>
-                    <div className="text-[11px] text-[#5E6D64] truncate">Climate & scenario tools</div>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => quickDemoLogin('admin@farmnova.ai', 'AdminTerra2026!')}
-                    className="text-left px-3 py-2 rounded-lg border border-[#E2DDD1] bg-[#FAF8F3] hover:border-[#0E4D3A] transition-colors"
-                  >
-                    <div className="text-xs font-semibold text-[#132A20]">Administrator</div>
-                    <div className="text-[11px] text-[#5E6D64] truncate">Governance & audit logs</div>
-                  </button>
+              {/* Google OAuth Sign-In */}
+              <div className="mt-6 pt-5 border-t border-[#ECE8DD] space-y-2.5">
+                <div className="relative flex items-center justify-center">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-[#6E7C73]">or</span>
                 </div>
                 <button
                   type="button"
-                  disabled={loading}
-                  onClick={() => quickDemoLogin('kwame.mensah@farmnova.ai', 'FarmerTerra2026!')}
-                  className="mt-2.5 w-full py-2 px-3 rounded-lg border border-[#0E4D3A]/30 bg-white hover:border-[#0E4D3A] text-xs font-semibold text-[#0E4D3A] transition-colors"
+                  disabled={loading || googleLoading}
+                  onClick={handleGoogleLogin}
+                  className="w-full py-2.5 px-4 rounded-lg border border-[#D8D2C3] bg-[#FAF8F3] hover:bg-white hover:border-[#0E4D3A] text-sm font-semibold text-[#132A20] inline-flex items-center justify-center gap-2.5 transition-colors disabled:opacity-50"
                 >
-                  {t('auth.guestBtn')}
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="#4285F4"
+                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
+                    />
+                  </svg>
+                  <span>{googleLoading ? 'Connecting to Google...' : t('auth.googleBtn')}</span>
                 </button>
+                {pendingGoogleUrl && (
+                  <a
+                    href={pendingGoogleUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full text-center py-2 px-3 rounded-lg bg-[#0E4D3A] text-[#FAF8F3] text-xs font-semibold hover:bg-[#0A3A2B] transition-colors"
+                  >
+                    Open Google Sign-In Window
+                  </a>
+                )}
               </div>
             </div>
           </div>

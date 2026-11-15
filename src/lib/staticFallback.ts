@@ -187,6 +187,40 @@ export async function handleStaticApiFallback<T>(
     throw new Error('Invalid email or password.');
   }
 
+  if (pathname === '/api/auth/google' && method === 'POST') {
+    const accessToken = String(body.accessToken || '').trim();
+    if (!accessToken) throw new Error('Google sign-in token is required.');
+    const supabase = getSupabaseClient();
+    if (!isSupabaseClientConfigured || !supabase) {
+      throw new Error('Supabase client is not configured.');
+    }
+    const { data, error } = await supabase.auth.getUser(accessToken);
+    if (error || !data.user?.email) {
+      throw new Error(error?.message || 'Could not verify Google sign-in.');
+    }
+    const email = data.user.email.trim().toLowerCase();
+    const users = getUsers();
+    const existing = users.find((u) => u.email === email);
+    const syncedUser: StaticUserRecord = existing
+      ? { ...existing, verified: true }
+      : {
+          id: data.user.id,
+          email,
+          name: String(data.user.user_metadata?.full_name || data.user.user_metadata?.name || email.split('@')[0]),
+          password: '',
+          role: 'farmer',
+          verified: true,
+          organization: '',
+          region: '',
+          preferredUnits: 'metric',
+          active: true,
+          createdAt: data.user.created_at || new Date().toISOString(),
+        };
+    writeJson(STORAGE_KEYS.users, [...users.filter((u) => u.email !== email), syncedUser]);
+    const token = issueToken(syncedUser.id);
+    return { token, user: toPublicUser(syncedUser) } as T;
+  }
+
   if (pathname === '/api/auth/register' && method === 'POST') {
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');

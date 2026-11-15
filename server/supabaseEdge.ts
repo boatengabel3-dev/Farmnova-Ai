@@ -31,7 +31,7 @@ function normalizeSupabaseUrl(raw: string | undefined): string {
   return '';
 }
 
-function resolveSupabaseConfig() {
+export function resolveSupabaseConfig() {
   const url =
     normalizeSupabaseUrl(process.env.SUPABASE_URL) ||
     normalizeSupabaseUrl(process.env.VITE_SUPABASE_URL) ||
