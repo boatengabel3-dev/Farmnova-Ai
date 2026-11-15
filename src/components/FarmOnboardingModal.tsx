@@ -309,10 +309,11 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close onboarding"
-              className="p-2 rounded-lg text-[#5E6D64] hover:text-[#132A20] hover:bg-[#F2EFE7] transition-colors"
+              aria-label="Exit farm registration"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#D8D2C3] text-xs font-semibold text-[#5E6D64] hover:text-[#132A20] hover:bg-[#F2EFE7] transition-colors"
             >
-              <X className="w-5 h-5" />
+              <span>Exit</span>
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -811,14 +812,25 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
 
         {/* Footer Controls */}
         <div className="px-6 py-4 bg-white border-t border-[#E2DDD1] flex items-center justify-between gap-4">
-          <button
-            type="button"
-            disabled={step === 1}
-            onClick={() => setStep((s) => Math.max(1, s - 1))}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-[#D8D2C3] text-[#2E3E35] hover:bg-[#F2EFE7] disabled:opacity-40"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={step === 1}
+              onClick={() => setStep((s) => Math.max(1, s - 1))}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-[#D8D2C3] text-[#2E3E35] hover:bg-[#F2EFE7] disabled:opacity-40"
+            >
+              <ArrowLeft className="w-4 h-4" /> Back
+            </button>
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2 text-sm font-medium rounded-lg text-[#5E6D64] hover:text-[#132A20] hover:bg-[#F2EFE7] transition-colors"
+              >
+                Exit
+              </button>
+            )}
+          </div>
 
           {step < 6 ? (
             <button

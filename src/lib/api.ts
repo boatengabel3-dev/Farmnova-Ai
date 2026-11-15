@@ -10,15 +10,23 @@ import type {
   User,
 } from '../types';
 
-const TOKEN_KEY = 'terravane_session_token';
+import { getSupabaseClient, isSupabaseClientConfigured, SUPABASE_EDGE_FUNCTION_SLUG } from './supabase';
+
+const TOKEN_KEY = 'farmnova_session_token';
+const LEGACY_TOKEN_KEY = 'terravane_session_token';
 
 export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY);
 }
 
 export function setStoredToken(token: string | null) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  }
 }
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -131,6 +139,50 @@ export const api = {
     apiFetch<{ ok: boolean }>('/api/admin/announcements', { method: 'POST', body: JSON.stringify(payload) }),
   adminDeleteAnnouncement: (id: string) => apiFetch<{ ok: boolean }>(`/api/admin/announcements/${id}`, { method: 'DELETE' }),
   adminClearCache: () => apiFetch<{ ok: boolean }>('/api/admin/cache/clear', { method: 'POST' }),
+
+  // Supabase Edge Function
+  edgeStatus: () =>
+    apiFetch<{
+      configured: boolean;
+      functionSlug: string;
+      mode: 'supabase-remote' | 'local-edge-bridge';
+      endpoint: string;
+      supportedActions: string[];
+    }>('/api/edge/status'),
+
+  invokeEdge: async (
+    action: 'health' | 'nasa-telemetry' | 'rotation-brief' | 'ai-advisor',
+    payload: Record<string, unknown> = {},
+    farmId?: string
+  ) => {
+    const supabase = getSupabaseClient();
+    if (isSupabaseClientConfigured && supabase) {
+      const { data, error } = await supabase.functions.invoke(SUPABASE_EDGE_FUNCTION_SLUG, {
+        body: { action, payload: { ...payload, ...(farmId ? { farmId } : {}) } },
+      });
+      if (!error && data && (data as any).ok !== false) {
+        return data as {
+          ok: boolean;
+          action: string;
+          functionSlug: string;
+          runtime: string;
+          executedAt: string;
+          data: Record<string, any>;
+        };
+      }
+    }
+    return apiFetch<{
+      ok: boolean;
+      action: string;
+      functionSlug: string;
+      runtime: string;
+      executedAt: string;
+      data: Record<string, any>;
+    }>('/api/edge/invoke', {
+      method: 'POST',
+      body: JSON.stringify({ action, payload, farmId }),
+    });
+  },
 };
 
 export async function downloadFarmCsv(farm: Farm) {
@@ -143,7 +195,7 @@ export async function downloadFarmCsv(farm: Farm) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${farm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-terravane-report.csv`;
+  a.download = `${farm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-farmnova-report.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -192,7 +244,7 @@ export function generateFarmPdfReport(farm: Farm, analysis: EnvironmentalAnalysi
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(250, 248, 243);
-  doc.text('TerraVane Agricultural Intelligence Report', margin, 36);
+  doc.text('FarmNova AI Agricultural Intelligence Report', margin, 36);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(228, 210, 165);
@@ -243,5 +295,5 @@ export function generateFarmPdfReport(farm: Farm, analysis: EnvironmentalAnalysi
     true
   );
 
-  doc.save(`${farm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-terravane-report.pdf`);
+  doc.save(`${farm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-farmnova-report.pdf`);
 }

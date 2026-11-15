@@ -49,7 +49,7 @@ export async function askAgriAssistant(
     `Soil fertility reported: ${farm.soilFertility}`,
   ].join('; ');
 
-  const systemInstruction = `You are TerraVane's Agricultural Intelligence Assistant.
+  const systemInstruction = `You are FarmNova AI's Agricultural Intelligence Assistant.
 Tone: ${tone}.
 Target Audience: Farmers and local agricultural extension staff—use clear, practical, non-jargon language while remaining scientifically rigorous.
 

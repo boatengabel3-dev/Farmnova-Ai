@@ -8,6 +8,7 @@ import { db, generateToken, hashPassword, initDatabase, verifyPassword, writeAud
 import { fetchFarmEnvironmentalAnalysis } from './server/nasa.ts';
 import { generateRotationStrategies, simulateClimateScenarios } from './server/rotationEngine.ts';
 import { askAgriAssistant } from './server/aiAssistant.ts';
+import { getSupabaseEdgeStatus, invokeSupabaseEdge, type EdgeAction } from './server/supabaseEdge.ts';
 import type { ClimateScenarioParams, Crop, Farm, GeoPoint, User, UserRole } from './src/types.ts';
 
 initDatabase();
@@ -195,9 +196,8 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     return res.status(409).json({ error: 'An account with this email already exists.' });
   }
 
-  // Self-registration permits farmer, expert, or researcher (admin must be promoted by an existing admin)
-  const allowedSelfRoles: UserRole[] = ['farmer', 'expert', 'researcher'];
-  const assignedRole: UserRole = allowedSelfRoles.includes(role) ? role : 'farmer';
+  // Self-registration is strictly restricted to farmers (experts, researchers, and admins are provisioned by administrators)
+  const assignedRole: UserRole = 'farmer';
   const id = crypto.randomUUID();
   const verificationToken = crypto.randomBytes(16).toString('hex');
   const now = new Date().toISOString();
@@ -616,8 +616,56 @@ app.get('/api/farms/:id/export/csv', requireAuth, async (req: AuthedRequest, res
 
   writeAuditLog(req.user!.id, req.user!.email, 'EXPORT_CSV_REPORT', 'farm', farm.id, 'Generated CSV environmental & rotation report', req.ip);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${farm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-terravane-report.csv"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${farm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-farmnova-report.csv"`);
   res.send(lines.join('\n'));
+});
+
+// ---------------- SUPABASE EDGE FUNCTION BRIDGE ----------------
+app.get('/api/edge/status', requireAuth, (_req: AuthedRequest, res: Response) => {
+  res.json(getSupabaseEdgeStatus());
+});
+
+app.post('/api/edge/invoke', requireAuth, rateLimiter(30), async (req: AuthedRequest, res: Response) => {
+  const action = String(req.body?.action || 'health') as EdgeAction;
+  const allowedActions: EdgeAction[] = ['health', 'nasa-telemetry', 'rotation-brief', 'ai-advisor'];
+  if (!allowedActions.includes(action)) {
+    return res.status(400).json({ error: `Unsupported Edge Function action: ${action}` });
+  }
+
+  const rawPayload = (req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : {}) as Record<string, unknown>;
+  const requestedFarmId = String(req.body?.farmId || rawPayload.farmId || '').trim();
+
+  let ownedFarm: Farm | null = null;
+  if (requestedFarmId) {
+    const row = db
+      .prepare(`SELECT f.*, u.name as owner_name FROM farms f JOIN users u ON u.id = f.owner_id WHERE f.id = ?`)
+      .get(requestedFarmId) as any;
+    if (!row) {
+      return res.status(404).json({ error: 'Farm not found.' });
+    }
+    if (row.owner_id !== req.user!.id) {
+      writeAuditLog(req.user!.id, req.user!.email, 'UNAUTHORIZED_EDGE_FARM_ACCESS', 'farm', requestedFarmId, 'Blocked cross-user edge access', req.ip);
+      return res.status(403).json({ error: 'Access denied for requested farm boundary.' });
+    }
+    ownedFarm = rowToFarm(row);
+  }
+
+  try {
+    const crops = (db.prepare(`SELECT * FROM crops ORDER BY name ASC`).all() as any[]).map(rowToCrop);
+    const result = await invokeSupabaseEdge(action, rawPayload, { farm: ownedFarm, crops });
+    writeAuditLog(
+      req.user!.id,
+      req.user!.email,
+      'EDGE_FUNCTION_INVOKED',
+      'edge_function',
+      result.functionSlug,
+      `action=${action}, runtime=${result.runtime}`,
+      req.ip
+    );
+    res.json(result);
+  } catch (err: any) {
+    res.status(502).json({ error: err?.message || 'Supabase Edge Function execution failed.' });
+  }
 });
 
 // ---------------- CROP INTELLIGENCE DATABASE ----------------
@@ -850,7 +898,7 @@ async function startServer() {
   }
 
   app.listen(port, '0.0.0.0', () => {
-    console.log(`TerraVane server running on http://0.0.0.0:${port}`);
+    console.log(`FarmNova AI server running on http://0.0.0.0:${port}`);
   });
 }
 

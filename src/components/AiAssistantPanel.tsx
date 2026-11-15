@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MessageSquare, Send, Trash2 } from 'lucide-react';
+import { Layers, MessageSquare, Send, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ChatMessage, Farm } from '../types';
 
@@ -75,6 +75,30 @@ export function AiAssistantPanel({ farm }: Props) {
     setMessages([]);
   }
 
+  async function handleEdgeBriefing() {
+    if (loading) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await api.invokeEdge('rotation-brief', {}, farm.id);
+      const summary = String(res.data?.summary || 'Edge briefing generated.');
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `edge-${Date.now()}`,
+          farmId: farm.id,
+          role: 'assistant',
+          content: `${summary}\n\n[Executed via ${res.functionSlug} · ${res.runtime}]`,
+          createdAt: res.executedAt || new Date().toISOString(),
+        },
+      ]);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="bg-white border border-[#E2DDD1] rounded-xl overflow-hidden flex flex-col h-[640px]">
       <div className="px-5 py-4 border-b border-[#E2DDD1] bg-[#FAF8F3] flex items-center justify-between gap-4">
@@ -90,15 +114,25 @@ export function AiAssistantPanel({ farm }: Props) {
           </div>
         </div>
 
-        {messages.length > 0 && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleClear}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#D8D2C3] text-[#5E6D64] hover:text-[#8C2D19]"
+            disabled={loading}
+            onClick={handleEdgeBriefing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-[#0E4D3A] text-[#0E4D3A] hover:bg-[#0E4D3A]/5 disabled:opacity-50"
           >
-            <Trash2 className="w-3.5 h-3.5" /> Clear Thread
+            <Layers className="w-3.5 h-3.5" /> Edge Briefing
           </button>
-        )}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#D8D2C3] text-[#5E6D64] hover:text-[#8C2D19]"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Clear Thread
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Chat Viewport */}
@@ -139,7 +173,7 @@ export function AiAssistantPanel({ farm }: Props) {
                 }`}
               >
                 <div className={`text-[11px] font-semibold mb-1 ${msg.role === 'user' ? 'text-[#E4C37A]' : 'text-[#5E6D64]'}`}>
-                  {msg.role === 'user' ? 'You' : 'TerraVane Agronomic Assistant'}
+                  {msg.role === 'user' ? 'You' : 'FarmNova AI Agronomic Assistant'}
                 </div>
                 {msg.content}
               </div>

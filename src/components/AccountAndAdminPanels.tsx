@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Database, Megaphone, RefreshCw, Shield, Trash2, Users } from 'lucide-react';
+import { CheckCircle2, CloudLightning, Database, Megaphone, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { User } from '../types';
 
@@ -139,7 +139,11 @@ export function AccountSettingsPanel({ user, onUserUpdated }: { user: User; onUs
 export function AdminDashboardPanel({ onAnnouncementsChanged }: { onAnnouncementsChanged: () => Promise<void> }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'users' | 'farms' | 'datasets' | 'ai' | 'announcements' | 'audit'>('users');
+  const [tab, setTab] = useState<'users' | 'farms' | 'datasets' | 'ai' | 'edge' | 'announcements' | 'audit'>('users');
+  const [edgeInfo, setEdgeInfo] = useState<any>(null);
+  const [edgeAction, setEdgeAction] = useState<'health' | 'nasa-telemetry' | 'rotation-brief'>('health');
+  const [edgeResult, setEdgeResult] = useState<string | null>(null);
+  const [edgeRunning, setEdgeRunning] = useState(false);
   const [annTitle, setAnnTitle] = useState('');
   const [annBody, setAnnBody] = useState('');
   const [annSeverity, setAnnSeverity] = useState('info');
@@ -148,8 +152,9 @@ export function AdminDashboardPanel({ onAnnouncementsChanged }: { onAnnouncement
   async function load() {
     setLoading(true);
     try {
-      const res = await api.adminOverview();
+      const [res, edge] = await Promise.all([api.adminOverview(), api.edgeStatus().catch(() => null)]);
       setData(res);
+      setEdgeInfo(edge);
     } finally {
       setLoading(false);
     }
@@ -217,6 +222,7 @@ export function AdminDashboardPanel({ onAnnouncementsChanged }: { onAnnouncement
             ['farms', 'Registered Farms'],
             ['datasets', 'NASA Data Sources'],
             ['ai', 'AI Settings'],
+            ['edge', 'Supabase Edge'],
             ['announcements', 'Announcements'],
             ['audit', 'Audit Logs'],
           ] as const
@@ -398,6 +404,70 @@ export function AdminDashboardPanel({ onAnnouncementsChanged }: { onAnnouncement
             Save AI Settings
           </button>
         </form>
+      )}
+
+      {tab === 'edge' && (
+        <div className="bg-white border border-[#E2DDD1] rounded-xl p-6 space-y-4 text-xs max-w-2xl">
+          <div className="flex items-center gap-2 font-semibold text-sm text-[#132A20]">
+            <CloudLightning className="w-4 h-4 text-[#0E4D3A]" />
+            <span>Supabase Edge Function Runtime ({edgeInfo?.functionSlug || 'farmnova-edge'})</span>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 bg-[#FAF8F3] border border-[#ECE8DD] rounded-lg p-3.5">
+            <div>
+              <span className="text-[#5E6D64]">Routing Mode:</span>{' '}
+              <span className="font-mono font-semibold text-[#132A20]">
+                {edgeInfo?.mode === 'supabase-remote' ? 'Hosted Supabase Edge' : 'Local Express Edge Bridge'}
+              </span>
+            </div>
+            <div>
+              <span className="text-[#5E6D64]">Endpoint:</span>{' '}
+              <span className="font-mono text-[#132A20] break-all">{edgeInfo?.endpoint || '/api/edge/invoke'}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={edgeAction}
+              onChange={(e) => setEdgeAction(e.target.value as any)}
+              className="px-3 py-2 bg-[#FAF8F3] border border-[#D8D2C3] rounded-lg font-mono"
+            >
+              <option value="health">health</option>
+              <option value="nasa-telemetry">nasa-telemetry (Ejura 7.38, -1.37)</option>
+              <option value="rotation-brief">rotation-brief</option>
+            </select>
+            <button
+              type="button"
+              disabled={edgeRunning}
+              onClick={async () => {
+                setEdgeRunning(true);
+                setEdgeResult(null);
+                try {
+                  const payload =
+                    edgeAction === 'nasa-telemetry'
+                      ? { lat: 7.3833, lon: -1.3667, days: 90 }
+                      : edgeAction === 'rotation-brief'
+                      ? { farmName: 'Ejura Reference Block', totalRainMm: 940, avgRootSoilWetness: 0.56, longestDrySpellDays: 12 }
+                      : {};
+                  const out = await api.invokeEdge(edgeAction, payload);
+                  setEdgeResult(JSON.stringify(out, null, 2));
+                } catch (e: any) {
+                  setEdgeResult(JSON.stringify({ ok: false, error: e.message }, null, 2));
+                } finally {
+                  setEdgeRunning(false);
+                }
+              }}
+              className="px-4 py-2 bg-[#0E4D3A] text-white font-semibold rounded-lg hover:bg-[#0A3A2B] disabled:opacity-50"
+            >
+              {edgeRunning ? 'Running...' : 'Invoke Edge Function'}
+            </button>
+          </div>
+
+          {edgeResult && (
+            <pre className="p-3.5 rounded-lg bg-[#132A20] text-[#FAF8F3] font-mono text-[11px] overflow-x-auto leading-relaxed">
+              {edgeResult}
+            </pre>
+          )}
+        </div>
       )}
 
       {tab === 'announcements' && (

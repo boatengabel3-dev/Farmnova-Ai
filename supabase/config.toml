@@ -1,0 +1,4 @@
+project_id = "farmnova-ai"
+
+[functions.farmnova-edge]
+verify_jwt = false

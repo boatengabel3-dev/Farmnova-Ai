@@ -768,10 +768,10 @@ function seedInitialData() {
       `INSERT INTO users (id, email, name, password_hash, role, verified, organization, region, preferred_units, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    insertUser.run('user-farmer-1', 'kwame.mensah@terravane.org', 'Kwame Mensah', hashPassword('FarmerTerra2026!'), 'farmer', 1, 'Ejura Smallholder Cooperative', 'Ashanti Region, Ghana', 'metric', now);
-    insertUser.run('user-expert-1', 'amina.osei@terravane.org', 'Dr. Amina Osei', hashPassword('ExpertTerra2026!'), 'expert', 1, 'West Africa Agronomy Extension', 'Kumasi, Ghana', 'metric', now);
-    insertUser.run('user-researcher-1', 'david.kamau@terravane.org', 'David Kamau', hashPassword('ResearchTerra2026!'), 'researcher', 1, 'Rift Valley Agro-Climate Lab', 'Nakuru, Kenya', 'metric', now);
-    insertUser.run('user-admin-1', 'admin@terravane.org', 'TerraVane Platform Admin', hashPassword('AdminTerra2026!'), 'admin', 1, 'TerraVane Operations', 'Global', 'metric', now);
+    insertUser.run('user-farmer-1', 'kwame.mensah@farmnova.ai', 'Kwame Mensah', hashPassword('FarmerTerra2026!'), 'farmer', 1, 'Ejura Smallholder Cooperative', 'Ashanti Region, Ghana', 'metric', now);
+    insertUser.run('user-expert-1', 'amina.osei@farmnova.ai', 'Dr. Amina Osei', hashPassword('ExpertTerra2026!'), 'expert', 1, 'West Africa Agronomy Extension', 'Kumasi, Ghana', 'metric', now);
+    insertUser.run('user-researcher-1', 'david.kamau@farmnova.ai', 'David Kamau', hashPassword('ResearchTerra2026!'), 'researcher', 1, 'Rift Valley Agro-Climate Lab', 'Nakuru, Kenya', 'metric', now);
+    insertUser.run('user-admin-1', 'admin@farmnova.ai', 'FarmNova AI Platform Admin', hashPassword('AdminTerra2026!'), 'admin', 1, 'FarmNova AI Operations', 'Global', 'metric', now);
 
     // Seed two real-coordinate sample farms for Kwame Mensah
     const insertFarm = db.prepare(
@@ -888,8 +888,16 @@ function seedInitialData() {
       'Daily precipitation, 2m temperature, root-zone soil wetness, and SRTM terrain elevation are live-queried for registered farm coordinates. Remember that gridded 0.5° meteorology complements—never replaces—on-farm soil testing.',
       'info',
       1,
-      'TerraVane Platform Admin',
+      'FarmNova AI Platform Admin',
       now
     );
   }
+
+  // Idempotent migration for pre-existing demo rows
+  db.prepare(
+    `UPDATE users SET email = REPLACE(email, '@terravane.org', '@farmnova.ai'), name = REPLACE(name, 'TerraVane', 'FarmNova AI'), organization = REPLACE(organization, 'TerraVane', 'FarmNova AI') WHERE email LIKE '%@terravane.org'`
+  ).run();
+  db.prepare(
+    `UPDATE announcements SET created_by = 'FarmNova AI Platform Admin' WHERE created_by = 'TerraVane Platform Admin'`
+  ).run();
 }

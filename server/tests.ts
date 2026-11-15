@@ -6,8 +6,8 @@ import type { Crop, EnvironmentalAnalysis, Farm } from '../src/types.ts';
 initDatabase();
 
 // 1. Password hashing verification
-const hashed = hashPassword('TerraVaneTest2026!');
-assert.equal(verifyPassword('TerraVaneTest2026!', hashed), true);
+const hashed = hashPassword('FarmNovaTest2026!');
+assert.equal(verifyPassword('FarmNovaTest2026!', hashed), true);
 assert.equal(verifyPassword('WrongPassword', hashed), false);
 
 // 2. Crop database seeded with African & cover crops
@@ -126,4 +126,4 @@ const sim = simulateClimateScenarios(sampleFarm, mockEnv, strategies, {
 assert.equal(sim.outcomes.length, 3);
 assert.ok(sim.disclaimer.includes('NOT A WEATHER FORECAST'));
 
-console.log('All TerraVane backend unit tests passed successfully.');
+console.log('All FarmNova AI backend unit tests passed successfully.');

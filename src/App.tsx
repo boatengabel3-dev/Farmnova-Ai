@@ -188,9 +188,9 @@ export default function App() {
       {/* Desktop Sidebar (256px) */}
       <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-[#132A20] text-[#FAF8F3] border-r border-[#1F3F31] sticky top-0 h-screen">
         <div className="px-5 py-5 border-b border-white/10 flex items-center gap-3">
-          <BrandMark className="w-8 h-8 shrink-0" />
+          <BrandMark className="w-9 h-9 shrink-0" />
           <div>
-            <div className="font-display text-lg font-semibold leading-none">TerraVane</div>
+            <div className="font-display text-lg font-semibold leading-none">FarmNova AI</div>
             <div className="text-[11px] text-[#C8D4CD] mt-1 capitalize">{user.role} workspace</div>
           </div>
         </div>
@@ -286,7 +286,7 @@ export default function App() {
               {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             </button>
             <div className="text-xs text-[#5E6D64] truncate">
-              <span>TerraVane</span>
+              <span>FarmNova AI</span>
               <span className="mx-2">/</span>
               <span className="font-semibold text-[#132A20]">
                 {selectedFarm ? `${selectedFarm.name} · ${selectedFarm.region}, ${selectedFarm.country}` : 'Workspace'}
@@ -727,7 +727,7 @@ export default function App() {
           crops={crops}
           isFirstOnboarding={farms.length === 0}
           onSave={handleSaveFarm}
-          onClose={farms.length > 0 || user.role === 'admin' ? () => { setShowOnboarding(false); setEditingFarm(null); } : undefined}
+          onClose={() => { setShowOnboarding(false); setEditingFarm(null); }}
         />
       )}
     </div>
