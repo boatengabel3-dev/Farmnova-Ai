@@ -104,6 +104,11 @@ export const api = {
     apiFetch<{ farm: Farm; analysis: EnvironmentalAnalysis; strategies: RotationStrategy[] }>(
       `/api/farms/${id}/analysis${refresh ? '?refresh=1' : ''}`
     ),
+  getRealtimeForecast: (id: string, refresh = false) =>
+    apiFetch<{
+      realtimeForecast: NonNullable<EnvironmentalAnalysis['realtimeForecast']>;
+      hazards: NonNullable<EnvironmentalAnalysis['hazards']>;
+    }>(`/api/farms/${id}/forecast${refresh ? '?refresh=1' : ''}`),
   simulateScenario: (id: string, params: ClimateScenarioParams) =>
     apiFetch<{ simulation: ClimateScenarioResult }>(`/api/farms/${id}/scenario`, {
       method: 'POST',

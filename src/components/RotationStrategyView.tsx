@@ -87,11 +87,11 @@ export function RotationStrategyView({ strategies, crops, user, onCropsChanged }
           </p>
         </div>
 
-        <div className="flex items-center gap-1 p-1 bg-[#EAE4D7] rounded-lg text-xs shrink-0">
+        <div className="flex items-center gap-1 p-1 bg-[#EAE4D7] rounded-lg text-xs shrink-0 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => setSubTab('strategies')}
-            className={`px-3.5 py-2 rounded-md font-semibold transition-colors whitespace-nowrap ${
+            className={`flex-1 sm:flex-initial px-3 sm:px-3.5 py-2 rounded-md font-semibold transition-colors whitespace-nowrap ${
               subTab === 'strategies' ? 'bg-white text-[#132A20] shadow-xs' : 'text-[#5A665E]'
             }`}
           >
@@ -100,7 +100,7 @@ export function RotationStrategyView({ strategies, crops, user, onCropsChanged }
           <button
             type="button"
             onClick={() => setSubTab('crops')}
-            className={`px-3.5 py-2 rounded-md font-semibold transition-colors whitespace-nowrap ${
+            className={`flex-1 sm:flex-initial px-3 sm:px-3.5 py-2 rounded-md font-semibold transition-colors whitespace-nowrap ${
               subTab === 'crops' ? 'bg-white text-[#132A20] shadow-xs' : 'text-[#5A665E]'
             }`}
           >
@@ -252,7 +252,7 @@ export function RotationStrategyView({ strategies, crops, user, onCropsChanged }
               </p>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+              <table className="w-full min-w-[640px] text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-[#E2DDD1] bg-[#F2EFE7]/70 text-[#2E3E35]">
                     <th className="py-3 px-4 font-semibold w-44">Indicator</th>
@@ -375,7 +375,7 @@ export function RotationStrategyView({ strategies, crops, user, onCropsChanged }
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-xs bg-[#FAF8F3] border border-[#ECE8DD] rounded-lg p-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-[#FAF8F3] border border-[#ECE8DD] rounded-lg p-3">
                   <div>
                     <span className="text-[#5E6D64]">Duration:</span>{' '}
                     <span className="font-mono text-[#132A20]">{crop.growingDurationDays}</span>

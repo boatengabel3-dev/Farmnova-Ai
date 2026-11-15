@@ -131,6 +131,56 @@ export interface EnvironmentalInsight {
   statusLevel: 'Nominal' | 'Watch' | 'Elevated Stress' | 'Insufficient Data';
 }
 
+export interface CurrentWeatherObservation {
+  observedAt: string;
+  timezone: string;
+  temperatureC: number | null;
+  feelsLikeC: number | null;
+  humidityPct: number | null;
+  precipMm: number | null;
+  windKmh: number | null;
+  windGustKmh: number | null;
+  weatherCode: number | null;
+  conditionLabel: string;
+  conditionSummary: string;
+}
+
+export interface ForecastDay {
+  date: string;
+  dayLabel: string;
+  weatherCode: number | null;
+  conditionLabel: string;
+  tempMaxC: number | null;
+  tempMinC: number | null;
+  precipSumMm: number | null;
+  precipProbPct: number | null;
+  windMaxKmh: number | null;
+  windGustMaxKmh: number | null;
+  et0Mm: number | null;
+  uvIndexMax: number | null;
+}
+
+export interface RealtimeWeatherForecast {
+  source: string;
+  fetchedAt: string;
+  current: CurrentWeatherObservation;
+  daily: ForecastDay[];
+  weeklyRainTotalMm: number;
+  maxForecastTempC: number | null;
+  minForecastTempC: number | null;
+}
+
+export interface FarmHazard {
+  id: string;
+  type: 'Heatwave' | 'Flood / Heavy Rain' | 'Dry Spell / Drought' | 'High Wind' | 'Fungal / Humidity' | 'Frost / Cold' | 'Soil Erosion';
+  title: string;
+  severity: 'Low' | 'Moderate' | 'High' | 'Severe';
+  timingWindow: string;
+  plainSummary: string;
+  triggerDetail: string;
+  farmerActions: string[];
+}
+
 export interface EnvironmentalAnalysis {
   farmId: string;
   fetchedAt: string;
@@ -161,6 +211,8 @@ export interface EnvironmentalAnalysis {
   datasets: DatasetProvenance[];
   insights: EnvironmentalInsight[];
   areasForInvestigation: string[];
+  realtimeForecast?: RealtimeWeatherForecast;
+  hazards?: FarmHazard[];
 }
 
 export type IndicatorRating = 'High Benefit' | 'Moderate Benefit' | 'Balanced' | 'Elevated Demand' | 'Higher Risk' | 'Needs Validation';

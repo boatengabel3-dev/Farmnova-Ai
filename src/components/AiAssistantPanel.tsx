@@ -100,21 +100,21 @@ export function AiAssistantPanel({ farm }: Props) {
   }
 
   return (
-    <div className="bg-white border border-[#E2DDD1] rounded-xl overflow-hidden flex flex-col h-[640px]">
-      <div className="px-5 py-4 border-b border-[#E2DDD1] bg-[#FAF8F3] flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2.5">
-          <MessageSquare className="w-5 h-5 text-[#0E4D3A]" />
-          <div>
-            <h2 className="font-display text-lg font-semibold text-[#132A20]">
+    <div className="bg-white border border-[#E2DDD1] rounded-xl overflow-hidden flex flex-col h-[calc(100dvh-10.5rem)] min-h-[420px] sm:h-[640px]">
+      <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-[#E2DDD1] bg-[#FAF8F3] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+          <MessageSquare className="w-5 h-5 text-[#0E4D3A] shrink-0 mt-0.5 sm:mt-0" />
+          <div className="min-w-0">
+            <h2 className="font-display text-base sm:text-lg font-semibold text-[#132A20]">
               Agricultural Intelligence Assistant
             </h2>
-            <p className="text-xs text-[#5E6D64]">
+            <p className="text-xs text-[#5E6D64] line-clamp-2 sm:line-clamp-none">
               Grounded strictly in {farm.name}’s soil profile, NASA observations, and rotation strategies
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             disabled={loading}
@@ -202,19 +202,19 @@ export function AiAssistantPanel({ farm }: Props) {
           e.preventDefault();
           askQuestion(input);
         }}
-        className="p-4 bg-white border-t border-[#E2DDD1] flex items-center gap-3"
+        className="p-3 sm:p-4 bg-white border-t border-[#E2DDD1] flex items-center gap-2 sm:gap-3"
       >
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about dry spells, legume benefits, missing soil pH, or rotation trade-offs..."
-          className="flex-1 px-4 py-2.5 text-sm bg-[#FAF8F3] border border-[#D8D2C3] rounded-lg focus:outline-none focus:border-[#0E4D3A]"
+          placeholder="Ask about rain, hazards, soil pH, or rotations..."
+          className="flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 text-sm bg-[#FAF8F3] border border-[#D8D2C3] rounded-lg focus:outline-none focus:border-[#0E4D3A]"
         />
         <button
           type="submit"
           disabled={loading || !input.trim()}
-          className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-[#0E4D3A] text-[#FAF8F3] text-sm font-semibold rounded-lg hover:bg-[#0A3A2B] disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 bg-[#0E4D3A] text-[#FAF8F3] text-xs sm:text-sm font-semibold rounded-lg hover:bg-[#0A3A2B] disabled:opacity-50 shrink-0"
         >
           <Send className="w-4 h-4" /> Ask
         </button>

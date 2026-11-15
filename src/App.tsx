@@ -30,6 +30,7 @@ import { ScenarioExplorer } from './components/ScenarioExplorer';
 import { AiAssistantPanel } from './components/AiAssistantPanel';
 import { AccountSettingsPanel, AdminDashboardPanel } from './components/AccountAndAdminPanels';
 import { api, downloadFarmCsv, generateFarmPdfReport, getStoredToken, setStoredToken } from './lib/api';
+import { LanguageSelector, useI18n } from './lib/i18n';
 import type { Announcement, Crop, EnvironmentalAnalysis, Farm, RotationStrategy, User } from './types';
 
 type WorkspaceTab =
@@ -44,6 +45,7 @@ type WorkspaceTab =
   | 'admin';
 
 export default function App() {
+  const { t } = useI18n();
   const [user, setUser] = useState<User | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [farms, setFarms] = useState<Farm[]>([]);
@@ -172,19 +174,19 @@ export default function App() {
   const selectedFarm = farms.find((f) => f.id === selectedFarmId) ?? null;
 
   const navItems: Array<{ id: WorkspaceTab; label: string; icon: React.ReactNode; adminOnly?: boolean; needsFarm?: boolean }> = [
-    { id: 'dashboard', label: 'Overview', icon: <LayoutDashboard className="w-4 h-4" />, needsFarm: true },
-    { id: 'environment', label: 'NASA Observations', icon: <Compass className="w-4 h-4" />, needsFarm: true },
-    { id: 'map', label: 'Geospatial Map', icon: <MapIcon className="w-4 h-4" />, needsFarm: true },
-    { id: 'rotations', label: 'Rotation & Crops', icon: <Sprout className="w-4 h-4" />, needsFarm: true },
-    { id: 'scenarios', label: 'Climate Scenarios', icon: <Sliders className="w-4 h-4" />, needsFarm: true },
-    { id: 'assistant', label: 'AI Assistant', icon: <MessageSquare className="w-4 h-4" />, needsFarm: true },
-    { id: 'reports', label: 'Reports & Export', icon: <FileText className="w-4 h-4" />, needsFarm: true },
-    { id: 'account', label: 'Account Settings', icon: <Settings className="w-4 h-4" /> },
-    ...(user.role === 'admin' ? [{ id: 'admin' as const, label: 'Admin Console', icon: <Shield className="w-4 h-4" />, adminOnly: true }] : []),
+    { id: 'dashboard', label: t('sidebar.overview'), icon: <LayoutDashboard className="w-4 h-4" />, needsFarm: true },
+    { id: 'environment', label: t('sidebar.nasa'), icon: <Compass className="w-4 h-4" />, needsFarm: true },
+    { id: 'map', label: t('sidebar.map'), icon: <MapIcon className="w-4 h-4" />, needsFarm: true },
+    { id: 'rotations', label: t('sidebar.rotations'), icon: <Sprout className="w-4 h-4" />, needsFarm: true },
+    { id: 'scenarios', label: t('sidebar.scenarios'), icon: <Sliders className="w-4 h-4" />, needsFarm: true },
+    { id: 'assistant', label: t('sidebar.assistant'), icon: <MessageSquare className="w-4 h-4" />, needsFarm: true },
+    { id: 'reports', label: t('sidebar.reports'), icon: <FileText className="w-4 h-4" />, needsFarm: true },
+    { id: 'account', label: t('sidebar.account'), icon: <Settings className="w-4 h-4" /> },
+    ...(user.role === 'admin' ? [{ id: 'admin' as const, label: t('sidebar.admin'), icon: <Shield className="w-4 h-4" />, adminOnly: true }] : []),
   ];
 
   return (
-    <div className="min-h-screen bg-[#FAF8F3] text-[#132A20] flex">
+    <div className="min-h-screen bg-[#FAF8F3] text-[#132A20] flex overflow-x-hidden">
       {/* Desktop Sidebar (256px) */}
       <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-[#132A20] text-[#FAF8F3] border-r border-[#1F3F31] sticky top-0 h-screen">
         <div className="px-5 py-5 border-b border-white/10 flex items-center gap-3">
@@ -267,7 +269,7 @@ export default function App() {
             onClick={handleLogout}
             className="w-full mt-2 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-xs font-medium text-[#FAF8F3] transition-colors"
           >
-            <LogOut className="w-3.5 h-3.5" /> Sign Out
+            <LogOut className="w-3.5 h-3.5" /> {t('sidebar.signOut')}
           </button>
         </div>
       </aside>
@@ -275,26 +277,27 @@ export default function App() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Context Header */}
-        <header className="bg-white border-b border-[#E2DDD1] px-6 py-3.5 flex items-center justify-between gap-4 sticky top-0 z-20">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="bg-white border-b border-[#E2DDD1] px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-20">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen((v) => !v)}
-              className="lg:hidden p-2 rounded-lg border border-[#D8D2C3]"
+              className="lg:hidden p-2 rounded-lg border border-[#D8D2C3] shrink-0"
               aria-label="Toggle navigation"
             >
               {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             </button>
             <div className="text-xs text-[#5E6D64] truncate">
-              <span>FarmNova AI</span>
-              <span className="mx-2">/</span>
+              <span className="hidden sm:inline">FarmNova AI</span>
+              <span className="hidden sm:inline mx-2">/</span>
               <span className="font-semibold text-[#132A20]">
-                {selectedFarm ? `${selectedFarm.name} · ${selectedFarm.region}, ${selectedFarm.country}` : 'Workspace'}
+                {selectedFarm ? `${selectedFarm.name} · ${selectedFarm.region}` : 'FarmNova AI'}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            <LanguageSelector />
             {selectedFarm && (
               <button
                 type="button"
@@ -302,9 +305,11 @@ export default function App() {
                   setEditingFarm(selectedFarm);
                   setShowOnboarding(true);
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#D8D2C3] hover:border-[#0E4D3A] whitespace-nowrap"
+                className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-lg border border-[#D8D2C3] hover:border-[#0E4D3A] whitespace-nowrap"
               >
-                <Edit3 className="w-3.5 h-3.5" /> Edit Farm
+                <Edit3 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{t('sidebar.editFarm')}</span>
+                <span className="sm:hidden">Edit</span>
               </button>
             )}
             <button
@@ -313,16 +318,35 @@ export default function App() {
                 setEditingFarm(null);
                 setShowOnboarding(true);
               }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-[#0E4D3A] text-[#FAF8F3] hover:bg-[#0A3A2B] whitespace-nowrap"
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-[#0E4D3A] text-[#FAF8F3] hover:bg-[#0A3A2B] whitespace-nowrap"
             >
-              <Plus className="w-3.5 h-3.5" /> New Farm
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t('sidebar.newFarm')}</span>
+              <span className="sm:hidden">New</span>
             </button>
           </div>
         </header>
 
         {/* Mobile Drawer Nav */}
         {mobileMenuOpen && (
-          <div className="lg:hidden bg-[#132A20] text-[#FAF8F3] p-4 space-y-2 border-b border-[#1F3F31]">
+          <div className="lg:hidden bg-[#132A20] text-[#FAF8F3] p-4 space-y-3 border-b border-[#1F3F31]">
+            <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/10">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold truncate">{user.name}</div>
+                <div className="text-[11px] text-[#B5C4BC] truncate">{user.email}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingFarm(null);
+                  setShowOnboarding(true);
+                  setMobileMenuOpen(false);
+                }}
+                className="inline-flex items-center gap-1 text-xs text-[#E4C37A] font-medium shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" /> {t('sidebar.addFarm')}
+              </button>
+            </div>
             {farms.length > 0 && (
               <select
                 value={selectedFarmId ?? ''}
@@ -331,43 +355,50 @@ export default function App() {
               >
                 {farms.map((f) => (
                   <option key={f.id} value={f.id}>
-                    {f.name}
+                    {f.name} ({f.sizeHectares} ha)
                   </option>
                 ))}
               </select>
             )}
-            <div className="grid grid-cols-2 gap-1.5">
-              {navItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  disabled={item.needsFarm && !selectedFarm}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${
-                    activeTab === item.id ? 'bg-[#0E4D3A]' : 'bg-white/5'
-                  }`}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </button>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {navItems.map((item) => {
+                const disabled = item.needsFarm && !selectedFarm;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs text-left ${
+                      activeTab === item.id
+                        ? 'bg-[#0E4D3A] border border-[#E4C37A]/40 font-semibold'
+                        : disabled
+                        ? 'bg-white/5 opacity-40 cursor-not-allowed'
+                        : 'bg-white/5'
+                    }`}
+                  >
+                    {item.icon}
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
             </div>
             <button
               type="button"
               onClick={handleLogout}
-              className="w-full py-2 text-xs font-semibold bg-white/10 rounded-lg"
+              className="w-full py-2.5 text-xs font-semibold bg-white/10 rounded-lg inline-flex items-center justify-center gap-2"
             >
-              Sign Out
+              <LogOut className="w-3.5 h-3.5" /> {t('sidebar.signOut')}
             </button>
           </div>
         )}
 
         {/* Active Platform Announcements */}
         {announcements.length > 0 && (
-          <div className="bg-[#F2EFE7] border-b border-[#E2DDD1] px-6 py-2.5 text-xs text-[#2E3E35] flex items-center justify-between gap-4">
+          <div className="bg-[#F2EFE7] border-b border-[#E2DDD1] px-4 sm:px-6 py-2.5 text-xs text-[#2E3E35] flex items-center justify-between gap-4">
             <div>
               <span className="font-semibold text-[#0E4D3A]">{announcements[0].title}: </span>
               <span>{announcements[0].body}</span>
@@ -376,7 +407,7 @@ export default function App() {
         )}
 
         {/* Main Viewport */}
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto space-y-6">
           {analysisError && (
             <div className="p-4 rounded-xl bg-[#FDF2F0] border border-[#E5B8B0] text-xs text-[#8C2D19]">
               {analysisError}
@@ -461,7 +492,7 @@ export default function App() {
                 </div>
 
                 {/* 4-Column Tabular Metrics Strip */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pt-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-5">
                   <div>
                     <div className="text-xs text-[#5E6D64] flex items-center gap-1.5">
                       <CloudRain className="w-3.5 h-3.5 text-[#0E4D3A]" /> 12-Month Rainfall
@@ -516,6 +547,34 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Real-Time Weather & Hazard Snapshot Strip */}
+              {analysis.realtimeForecast && (
+                <div className="bg-white border border-[#E2DDD1] rounded-xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-[#8A621C]">
+                      Live Farm Weather & Active Hazard Watch
+                    </div>
+                    <div className="text-sm font-semibold text-[#132A20]">
+                      Now: {analysis.realtimeForecast.current.temperatureC ?? '—'}°C · {analysis.realtimeForecast.current.conditionLabel} ·{' '}
+                      7-Day Rain: {analysis.realtimeForecast.weeklyRainTotalMm} mm
+                    </div>
+                    {analysis.hazards?.[0] && (
+                      <p className="text-xs text-[#47564E]">
+                        <span className="font-semibold text-[#9E2F1B]">{analysis.hazards[0].severity} Risk:</span>{' '}
+                        {analysis.hazards[0].title} — {analysis.hazards[0].plainSummary}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('environment')}
+                    className="px-4 py-2 text-xs font-semibold rounded-lg border border-[#0E4D3A] text-[#0E4D3A] hover:bg-[#0E4D3A]/5 shrink-0 whitespace-nowrap"
+                  >
+                    Open 7-Day Forecast & Hazards →
+                  </button>
+                </div>
+              )}
+
               {/* Map Preview + Soil & Rotation Snapshot */}
               <div className="grid lg:grid-cols-12 gap-6 items-stretch">
                 <div className="lg:col-span-6">
@@ -535,7 +594,7 @@ export default function App() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 text-xs bg-[#FAF8F3] border border-[#ECE8DD] rounded-lg p-3.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-[#FAF8F3] border border-[#ECE8DD] rounded-lg p-3.5">
                       <div>
                         <span className="text-[#5E6D64]">Soil Profile:</span>{' '}
                         <span className="font-medium text-[#132A20]">{selectedFarm.soilType} ({selectedFarm.soilTexture})</span>

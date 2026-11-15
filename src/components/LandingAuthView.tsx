@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ArrowRight, CheckCircle2, Compass, Layers, ShieldCheck, Sprout } from 'lucide-react';
 import { BrandMark } from './BrandMark';
 import { api, setStoredToken } from '../lib/api';
+import { LanguageSelector, useI18n } from '../lib/i18n';
 import type { User } from '../types';
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 type AuthMode = 'login' | 'register' | 'forgot' | 'verify';
 
 export function LandingAuthView({ onAuthenticated }: Props) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -128,54 +130,56 @@ export function LandingAuthView({ onAuthenticated }: Props) {
     <div className="min-h-screen bg-[#FAF8F3] text-[#132A20]">
       {/* Strict 3-Zone Top Navigation Bar */}
       <header className="border-b border-[#E2DDD1] bg-[#FAF8F3]/95 backdrop-blur-sm sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-8">
-          <a href="#top" className="flex items-center gap-3 whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-[#0E4D3A] rounded-md">
-            <BrandMark className="w-9 h-9" />
-            <span className="font-display text-xl font-semibold tracking-tight text-[#132A20]">FarmNova AI</span>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-8">
+          <a href="#top" className="flex items-center gap-2 sm:gap-3 whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-[#0E4D3A] rounded-md">
+            <BrandMark className="w-8 h-8 sm:w-9 sm:h-9" />
+            <span className="font-display text-lg sm:text-xl font-semibold tracking-tight text-[#132A20]">FarmNova AI</span>
           </a>
 
           <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-[#47564E]">
             <a href="#science" className="hover:text-[#0E4D3A] transition-colors whitespace-nowrap shrink-0">
-              Earth Observations
+              {t('nav.earth')}
             </a>
             <a href="#rotations" className="hover:text-[#0E4D3A] transition-colors whitespace-nowrap shrink-0">
-              Rotation Engine
+              {t('nav.rotations')}
             </a>
             <a href="#transparency" className="hover:text-[#0E4D3A] transition-colors whitespace-nowrap shrink-0">
-              Scientific Rigor
+              {t('nav.rigor')}
             </a>
             <a href="#access" className="hover:text-[#0E4D3A] transition-colors whitespace-nowrap shrink-0">
-              Platform Access
+              {t('nav.access')}
             </a>
           </nav>
 
-          <div className="shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <LanguageSelector />
             <a
               href="#access"
               onClick={() => setMode('register')}
-              className="px-4 py-2 text-sm font-semibold text-[#FAF8F3] bg-[#0E4D3A] rounded-lg hover:bg-[#0A3A2B] transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-2"
+              className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-[#FAF8F3] bg-[#0E4D3A] rounded-lg hover:bg-[#0A3A2B] transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 sm:gap-2"
             >
-              Register Farm
-              <ArrowRight className="w-4 h-4" />
+              <span className="hidden xs:inline sm:inline">{t('nav.registerFarm')}</span>
+              <span className="xs:hidden sm:hidden">Register</span>
+              <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </a>
           </div>
         </div>
       </header>
 
       {/* Hero Split Section */}
-      <section id="top" className="max-w-7xl mx-auto px-6 pt-12 pb-16">
+      <section id="top" className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 sm:pt-12 pb-12 sm:pb-16">
         <div className="grid lg:grid-cols-12 gap-10 items-stretch">
           {/* Left Editorial Column */}
           <div className="lg:col-span-7 flex flex-col justify-between">
             <div>
               <p className="text-xs font-medium tracking-wide text-[#8A621C] mb-4">
-                NASA Space Apps Challenge · Field Shift Agricultural Decision Support
+                {t('hero.tag')}
               </p>
-              <h1 className="font-display text-4xl sm:text-5xl font-semibold tracking-tight text-[#132A20] leading-[1.12] [text-wrap:balance] max-w-2xl">
-                Satellite intelligence for resilient crop rotations.
+              <h1 className="font-display text-3xl sm:text-5xl font-semibold tracking-tight text-[#132A20] leading-[1.12] [text-wrap:balance] max-w-2xl">
+                {t('hero.title')}
               </h1>
               <p className="mt-5 text-base sm:text-lg text-[#44544B] leading-relaxed max-w-2xl">
-                FarmNova AI translates live NASA rainfall, temperature, root-zone soil wetness, and terrain elevation into practical, scientifically transparent crop-rotation options tailored to your soil history and farm priorities.
+                {t('hero.subtitle')}
               </p>
 
               {/* Editorial Hero Photography Frame */}
@@ -206,8 +210,8 @@ export function LandingAuthView({ onAuthenticated }: Props) {
                 <div className="flex items-center justify-between border-b border-[#ECE8DD] pb-4 mb-6">
                   <div>
                     <h2 className="font-display text-2xl font-semibold text-[#132A20]">
-                      {mode === 'login' && 'Sign in to your farm'}
-                      {mode === 'register' && 'Create a farmer account'}
+                      {mode === 'login' && t('auth.signInTitle')}
+                      {mode === 'register' && t('auth.registerTitle')}
                       {mode === 'verify' && 'Verify your email'}
                       {mode === 'forgot' && 'Password recovery'}
                     </h2>
@@ -326,7 +330,7 @@ export function LandingAuthView({ onAuthenticated }: Props) {
                           type="text"
                           value={region}
                           onChange={(e) => setRegion(e.target.value)}
-                          placeholder="Ashanti, Ghana"
+                          placeholder="e.g. Iowa, USA · Punjab, India · Ashanti, Ghana"
                           className="w-full px-3 py-2 text-sm bg-[#FAF8F3] border border-[#D8D2C3] rounded-lg focus:outline-none focus:border-[#0E4D3A]"
                         />
                       </div>
@@ -473,7 +477,7 @@ export function LandingAuthView({ onAuthenticated }: Props) {
                 <p className="text-xs font-semibold text-[#5A665E] mb-2.5">
                   Instant Role Demonstration Accounts
                 </p>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     type="button"
                     disabled={loading}
@@ -481,7 +485,7 @@ export function LandingAuthView({ onAuthenticated }: Props) {
                     className="text-left px-3 py-2 rounded-lg border border-[#E2DDD1] bg-[#FAF8F3] hover:border-[#0E4D3A] transition-colors"
                   >
                     <div className="text-xs font-semibold text-[#132A20]">Farmer Demo</div>
-                    <div className="text-[11px] text-[#5E6D64] truncate">2 Ghana farms · NASA live</div>
+                    <div className="text-[11px] text-[#5E6D64] truncate">Sample farms · Live weather & NASA</div>
                   </button>
                   <button
                     type="button"
@@ -517,7 +521,7 @@ export function LandingAuthView({ onAuthenticated }: Props) {
                   onClick={() => quickDemoLogin('kwame.mensah@farmnova.ai', 'FarmerTerra2026!')}
                   className="mt-2.5 w-full py-2 px-3 rounded-lg border border-[#0E4D3A]/30 bg-white hover:border-[#0E4D3A] text-xs font-semibold text-[#0E4D3A] transition-colors"
                 >
-                  Continue Without Registering (Explore Farmer Workspace)
+                  {t('auth.guestBtn')}
                 </button>
               </div>
             </div>

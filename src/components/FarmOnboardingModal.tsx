@@ -57,7 +57,7 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
 
   // Step 1: Farm Info
   const [name, setName] = useState(initialFarm?.name ?? '');
-  const [country, setCountry] = useState(initialFarm?.country ?? 'Ghana');
+  const [country, setCountry] = useState(initialFarm?.country ?? '');
   const [region, setRegion] = useState(initialFarm?.region ?? '');
   const [district, setDistrict] = useState(initialFarm?.district ?? '');
   const [sizeHectares, setSizeHectares] = useState<string>(initialFarm ? String(initialFarm.sizeHectares) : '3.5');
@@ -293,12 +293,12 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
   const stepLabels = ['Farm Info', 'Location & Boundary', 'Soil Profile', 'Crop History', 'Priorities', 'Review'];
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#132A20]/55 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-[#FAF8F3] border border-[#DFD9CB] rounded-xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-[#132A20]/55 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-[#FAF8F3] border border-[#DFD9CB] rounded-xl w-full max-w-4xl max-h-[95dvh] flex flex-col overflow-hidden shadow-2xl">
         {/* Header */}
-        <div className="px-6 py-4 bg-white border-b border-[#E2DDD1] flex items-center justify-between gap-4">
-          <div>
-            <h2 className="font-display text-xl font-semibold text-[#132A20]">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-white border-b border-[#E2DDD1] flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="font-display text-lg sm:text-xl font-semibold text-[#132A20] truncate">
               {initialFarm ? `Edit Farm: ${initialFarm.name}` : isFirstOnboarding ? 'Register Your First Farm' : 'Register New Farm'}
             </h2>
             <p className="text-xs text-[#5E6D64] mt-0.5">
@@ -310,7 +310,7 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
               type="button"
               onClick={onClose}
               aria-label="Exit farm registration"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#D8D2C3] text-xs font-semibold text-[#5E6D64] hover:text-[#132A20] hover:bg-[#F2EFE7] transition-colors"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border border-[#D8D2C3] text-xs font-semibold text-[#5E6D64] hover:text-[#132A20] hover:bg-[#F2EFE7] transition-colors shrink-0"
             >
               <span>Exit</span>
               <X className="w-4 h-4" />
@@ -319,7 +319,7 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
         </div>
 
         {/* Step Progress Bar */}
-        <div className="px-6 py-3 bg-[#F2EFE7] border-b border-[#E2DDD1] grid grid-cols-6 gap-2">
+        <div className="px-4 sm:px-6 py-2.5 sm:py-3 bg-[#F2EFE7] border-b border-[#E2DDD1] grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-2">
           {stepLabels.map((lbl, idx) => {
             const num = idx + 1;
             const active = step === num;
@@ -356,7 +356,7 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g., Ejura Upper Terrace Plot"
+                  placeholder="e.g., North Ridge Maize Plot"
                   className="w-full px-3.5 py-2.5 text-sm bg-white border border-[#D8D2C3] rounded-lg focus:outline-none focus:border-[#0E4D3A]"
                 />
               </div>
@@ -367,7 +367,7 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
                   required
                   value={country}
                   onChange={(e) => setCountry(e.target.value)}
-                  placeholder="Ghana, Kenya, Nigeria..."
+                  placeholder="e.g., Brazil, India, USA, Kenya, Ghana"
                   className="w-full px-3.5 py-2.5 text-sm bg-white border border-[#D8D2C3] rounded-lg focus:outline-none focus:border-[#0E4D3A]"
                 />
               </div>
@@ -378,17 +378,17 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
                   required
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
-                  placeholder="Ashanti Region"
+                  placeholder="e.g., Iowa, Punjab, Minas Gerais, Ashanti"
                   className="w-full px-3.5 py-2.5 text-sm bg-white border border-[#D8D2C3] rounded-lg focus:outline-none focus:border-[#0E4D3A]"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#2E3E35] mb-1">District / Ward</label>
+                <label className="block text-xs font-semibold text-[#2E3E35] mb-1">District / County / Ward</label>
                 <input
                   type="text"
                   value={district}
                   onChange={(e) => setDistrict(e.target.value)}
-                  placeholder="Ejura-Sekyedumase"
+                  placeholder="Optional local district"
                   className="w-full px-3.5 py-2.5 text-sm bg-white border border-[#D8D2C3] rounded-lg focus:outline-none focus:border-[#0E4D3A]"
                 />
               </div>
@@ -811,21 +811,21 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
         </div>
 
         {/* Footer Controls */}
-        <div className="px-6 py-4 bg-white border-t border-[#E2DDD1] flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 bg-white border-t border-[#E2DDD1] flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               disabled={step === 1}
               onClick={() => setStep((s) => Math.max(1, s - 1))}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-[#D8D2C3] text-[#2E3E35] hover:bg-[#F2EFE7] disabled:opacity-40"
+              className="inline-flex items-center gap-1 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-lg border border-[#D8D2C3] text-[#2E3E35] hover:bg-[#F2EFE7] disabled:opacity-40"
             >
-              <ArrowLeft className="w-4 h-4" /> Back
+              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Back
             </button>
             {onClose && (
               <button
                 type="button"
                 onClick={onClose}
-                className="px-3.5 py-2 text-sm font-medium rounded-lg text-[#5E6D64] hover:text-[#132A20] hover:bg-[#F2EFE7] transition-colors"
+                className="px-2.5 sm:px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg text-[#5E6D64] hover:text-[#132A20] hover:bg-[#F2EFE7] transition-colors"
               >
                 Exit
               </button>
@@ -836,26 +836,26 @@ export function FarmOnboardingModal({ initialFarm, crops, onSave, onClose, isFir
             <button
               type="button"
               onClick={() => {
-                if (step === 1 && (!name.trim() || !region.trim())) {
-                  setError('Please enter a farm name and region before continuing.');
+                if (step === 1 && (!name.trim() || !country.trim() || !region.trim())) {
+                  setError('Please enter a farm name, country, and region before continuing.');
                   return;
                 }
                 setError(null);
                 setStep((s) => Math.min(6, s + 1));
               }}
-              className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-semibold rounded-lg bg-[#0E4D3A] text-[#FAF8F3] hover:bg-[#0A3A2B]"
+              className="inline-flex items-center gap-1.5 px-4 sm:px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg bg-[#0E4D3A] text-[#FAF8F3] hover:bg-[#0A3A2B]"
             >
-              Continue <ArrowRight className="w-4 h-4" />
+              Continue <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           ) : (
             <button
               type="button"
               disabled={saving}
               onClick={handleSubmit}
-              className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-lg bg-[#0E4D3A] text-[#FAF8F3] hover:bg-[#0A3A2B] disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 px-4 sm:px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg bg-[#0E4D3A] text-[#FAF8F3] hover:bg-[#0A3A2B] disabled:opacity-60"
             >
-              <Check className="w-4 h-4" />
-              {saving ? 'Saving & Querying NASA Data...' : initialFarm ? 'Save Changes' : 'Save Farm & Launch Analysis'}
+              <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              {saving ? 'Saving...' : initialFarm ? 'Save Changes' : 'Save Farm'}
             </button>
           )}
         </div>

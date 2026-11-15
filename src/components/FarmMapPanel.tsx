@@ -245,7 +245,7 @@ export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
 
       {/* Satellite Overlay Selector */}
       {!compact && (
-        <div className="px-4 py-2.5 border-b border-[#ECE8DD] bg-white flex flex-wrap items-center gap-1.5">
+        <div className="px-4 py-2.5 border-b border-[#ECE8DD] bg-white flex overflow-x-auto sm:flex-wrap items-center gap-1.5">
           {NASA_LAYERS.map((layer) => (
             <button
               key={layer.id}
@@ -264,11 +264,11 @@ export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
       )}
 
       {/* Map Viewport */}
-      <div className={`relative w-full ${compact ? 'h-64' : 'h-[430px]'}`}>
+      <div className={`relative w-full ${compact ? 'h-56 sm:h-64' : 'h-[300px] sm:h-[430px]'}`}>
         <div ref={mapRef} className="w-full h-full" />
 
         {/* Terrain & Coordinate Readout */}
-        <div className="absolute bottom-3 left-3 z-[400] bg-white/95 backdrop-blur-xs border border-[#DFD9CB] rounded-lg px-3 py-2 text-xs shadow-sm max-w-xs">
+        <div className="absolute bottom-3 left-3 z-[400] bg-white/95 backdrop-blur-xs border border-[#DFD9CB] rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs shadow-sm max-w-[calc(100%-1.5rem)] sm:max-w-xs">
           <div className="flex items-center gap-2 font-mono text-[#132A20]">
             <Mountain className="w-3.5 h-3.5 text-[#0E4D3A]" />
             <span>

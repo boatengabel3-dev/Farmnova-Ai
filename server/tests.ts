@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { db, hashPassword, initDatabase, verifyPassword } from './db.ts';
 import { generateRotationStrategies, simulateClimateScenarios } from './rotationEngine.ts';
+import { evaluatePotentialHazards } from './weatherHazards.ts';
 import type { Crop, EnvironmentalAnalysis, Farm } from '../src/types.ts';
 
 initDatabase();
@@ -125,5 +126,46 @@ const sim = simulateClimateScenarios(sampleFarm, mockEnv, strategies, {
 });
 assert.equal(sim.outcomes.length, 3);
 assert.ok(sim.disclaimer.includes('NOT A WEATHER FORECAST'));
+
+// 5. Hazard evaluator detects heavy rain and frost/heat thresholds cleanly
+const hazards = evaluatePotentialHazards(sampleFarm, mockEnv, {
+  source: 'Test',
+  fetchedAt: new Date().toISOString(),
+  current: {
+    observedAt: '2026-11-14T12:00',
+    timezone: 'UTC',
+    temperatureC: 36,
+    feelsLikeC: 38,
+    humidityPct: 86,
+    precipMm: 0,
+    windKmh: 15,
+    windGustKmh: 50,
+    weatherCode: 95,
+    conditionLabel: 'Thunderstorm',
+    conditionSummary: 'Storm expected',
+  },
+  daily: [
+    {
+      date: '2026-11-15',
+      dayLabel: 'Tomorrow',
+      weatherCode: 95,
+      conditionLabel: 'Thunderstorm',
+      tempMaxC: 38,
+      tempMinC: 24,
+      precipSumMm: 42,
+      precipProbPct: 90,
+      windMaxKmh: 30,
+      windGustMaxKmh: 52,
+      et0Mm: 4.5,
+      uvIndexMax: 8,
+    },
+  ],
+  weeklyRainTotalMm: 42,
+  maxForecastTempC: 38,
+  minForecastTempC: 24,
+});
+assert.ok(hazards.some((h) => h.type === 'Flood / Heavy Rain'));
+assert.ok(hazards.some((h) => h.type === 'Heatwave'));
+assert.ok(hazards.some((h) => h.type === 'High Wind'));
 
 console.log('All FarmNova AI backend unit tests passed successfully.');

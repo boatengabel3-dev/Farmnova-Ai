@@ -8,6 +8,7 @@ import { db, generateToken, hashPassword, initDatabase, verifyPassword, writeAud
 import { fetchFarmEnvironmentalAnalysis } from './server/nasa.ts';
 import { generateRotationStrategies, simulateClimateScenarios } from './server/rotationEngine.ts';
 import { askAgriAssistant } from './server/aiAssistant.ts';
+import { evaluatePotentialHazards, fetchRealtimeForecast } from './server/weatherHazards.ts';
 import { getSupabaseEdgeStatus, invokeSupabaseEdge, type EdgeAction } from './server/supabaseEdge.ts';
 import type { ClimateScenarioParams, Crop, Farm, GeoPoint, User, UserRole } from './src/types.ts';
 
@@ -483,13 +484,37 @@ app.get('/api/farms/:id/analysis', requireAuth, async (req: AuthedRequest, res: 
   if (!farm) return;
   try {
     const forceRefresh = req.query.refresh === '1';
-    const analysis = await fetchFarmEnvironmentalAnalysis(farm, forceRefresh);
+    const [analysis, realtimeForecast] = await Promise.all([
+      fetchFarmEnvironmentalAnalysis(farm, forceRefresh),
+      fetchRealtimeForecast(farm.centroidLat, farm.centroidLon, forceRefresh).catch(() => null),
+    ]);
+    const enrichedAnalysis = {
+      ...analysis,
+      ...(realtimeForecast ? { realtimeForecast } : {}),
+      hazards: evaluatePotentialHazards(farm, analysis, realtimeForecast),
+    };
     const cropRows = db.prepare(`SELECT * FROM crops ORDER BY name ASC`).all() as any[];
     const crops = cropRows.map(rowToCrop);
-    const strategies = generateRotationStrategies(farm, analysis, crops);
-    res.json({ farm, analysis, strategies });
+    const strategies = generateRotationStrategies(farm, enrichedAnalysis, crops);
+    res.json({ farm, analysis: enrichedAnalysis, strategies });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to retrieve NASA environmental analysis.' });
+  }
+});
+
+app.get('/api/farms/:id/forecast', requireAuth, async (req: AuthedRequest, res: Response) => {
+  const farm = loadOwnedFarm(req, res);
+  if (!farm) return;
+  try {
+    const forceRefresh = req.query.refresh === '1';
+    const [analysis, realtimeForecast] = await Promise.all([
+      fetchFarmEnvironmentalAnalysis(farm, false),
+      fetchRealtimeForecast(farm.centroidLat, farm.centroidLon, forceRefresh),
+    ]);
+    const hazards = evaluatePotentialHazards(farm, analysis, realtimeForecast);
+    res.json({ realtimeForecast, hazards });
+  } catch (err: any) {
+    res.status(502).json({ error: err?.message || 'Failed to retrieve real-time weather forecast.' });
   }
 });
 

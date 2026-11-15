@@ -59,7 +59,7 @@ export function AccountSettingsPanel({ user, onUserUpdated }: { user: User; onUs
       {msg && <div className="p-3 rounded-lg bg-[#F1F7F4] border border-[#B8D8C8] text-xs text-[#0E4D3A]">{msg}</div>}
       {err && <div className="p-3 rounded-lg bg-[#FDF2F0] border border-[#E5B8B0] text-xs text-[#8C2D19]">{err}</div>}
 
-      <form onSubmit={saveProfile} className="bg-white border border-[#E2DDD1] rounded-xl p-6 space-y-4">
+      <form onSubmit={saveProfile} className="bg-white border border-[#E2DDD1] rounded-xl p-4 sm:p-6 space-y-4">
         <div className="grid sm:grid-cols-2 gap-4 text-sm">
           <div>
             <label className="block text-xs font-semibold text-[#2E3E35] mb-1">Full Name</label>
@@ -96,7 +96,7 @@ export function AccountSettingsPanel({ user, onUserUpdated }: { user: User; onUs
         </button>
       </form>
 
-      <div className="bg-white border border-[#E2DDD1] rounded-xl p-6 space-y-3">
+      <div className="bg-white border border-[#E2DDD1] rounded-xl p-4 sm:p-6 space-y-3">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-[#132A20]">Email Verification</h3>
@@ -182,7 +182,7 @@ export function AdminDashboardPanel({ onAnnouncementsChanged }: { onAnnouncement
             setStatusMsg('Cleared NASA observation cache.');
             await load();
           }}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border border-[#D8D2C3] bg-white hover:border-[#0E4D3A]"
+          className="inline-flex items-center gap-1.5 self-start sm:self-auto px-3.5 py-2 text-xs font-semibold rounded-lg border border-[#D8D2C3] bg-white hover:border-[#0E4D3A]"
         >
           <RefreshCw className="w-3.5 h-3.5" /> Clear NASA Cache ({data.health.cachedGeospatialQueries})
         </button>
@@ -242,7 +242,7 @@ export function AdminDashboardPanel({ onAnnouncementsChanged }: { onAnnouncement
 
       {tab === 'users' && (
         <div className="bg-white border border-[#E2DDD1] rounded-xl overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full min-w-[620px] text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-[#E2DDD1] bg-[#FAF8F3]">
                 <th className="py-3 px-4 font-semibold">User</th>
@@ -311,7 +311,7 @@ export function AdminDashboardPanel({ onAnnouncementsChanged }: { onAnnouncement
           <div className="px-4 py-3 border-b border-[#ECE8DD] text-xs text-[#5E6D64]">
             Governance overview showing farm geographies only; private farmer soil, pest, and crop notes remain strictly isolated per owner.
           </div>
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full min-w-[620px] text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-[#E2DDD1] bg-[#FAF8F3]">
                 <th className="py-3 px-4 font-semibold">Farm ID / Title</th>
@@ -407,7 +407,7 @@ export function AdminDashboardPanel({ onAnnouncementsChanged }: { onAnnouncement
       )}
 
       {tab === 'edge' && (
-        <div className="bg-white border border-[#E2DDD1] rounded-xl p-6 space-y-4 text-xs max-w-2xl">
+        <div className="bg-white border border-[#E2DDD1] rounded-xl p-4 sm:p-6 space-y-4 text-xs max-w-2xl">
           <div className="flex items-center gap-2 font-semibold text-sm text-[#132A20]">
             <CloudLightning className="w-4 h-4 text-[#0E4D3A]" />
             <span>Supabase Edge Function Runtime ({edgeInfo?.functionSlug || 'farmnova-edge'})</span>
@@ -539,7 +539,7 @@ export function AdminDashboardPanel({ onAnnouncementsChanged }: { onAnnouncement
 
       {tab === 'audit' && (
         <div className="bg-white border border-[#E2DDD1] rounded-xl overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full min-w-[640px] text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-[#E2DDD1] bg-[#FAF8F3]">
                 <th className="py-3 px-4 font-semibold">Timestamp</th>
