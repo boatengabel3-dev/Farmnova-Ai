@@ -11,6 +11,7 @@ import type {
 } from '../types';
 
 import { getSupabaseClient, isSupabaseClientConfigured, SUPABASE_EDGE_FUNCTION_SLUG } from './supabase';
+import { handleStaticApiFallback } from './staticFallback';
 
 const TOKEN_KEY = 'farmnova_session_token';
 const LEGACY_TOKEN_KEY = 'terravane_session_token';
@@ -37,18 +38,36 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(path, { ...options, headers });
-  if (!res.ok) {
-    let errMsg = `Request failed (${res.status})`;
-    try {
-      const body = await res.json();
-      if (body?.error) errMsg = body.error;
-    } catch {
-      // ignore json parse failure
+  try {
+    const res = await fetch(path, { ...options, headers });
+    const contentType = res.headers.get('content-type') || '';
+    const isMissingApiRoute =
+      res.status === 404 ||
+      res.status === 405 ||
+      res.status === 501 ||
+      (res.ok && !contentType.includes('application/json'));
+
+    if (isMissingApiRoute) {
+      return await handleStaticApiFallback<T>(path, options, headers);
     }
-    throw new Error(errMsg);
+
+    if (!res.ok) {
+      let errMsg = `Request failed (${res.status})`;
+      try {
+        const body = await res.json();
+        if (body?.error) errMsg = body.error;
+      } catch {
+        // ignore json parse failure
+      }
+      throw new Error(errMsg);
+    }
+    return (await res.json()) as T;
+  } catch (err) {
+    if (err instanceof TypeError) {
+      return await handleStaticApiFallback<T>(path, options, headers);
+    }
+    throw err;
   }
-  return res.json() as Promise<T>;
 }
 
 export const api = {
@@ -194,9 +213,20 @@ export async function downloadFarmCsv(farm: Farm) {
   const token = getStoredToken();
   const res = await fetch(`/api/farms/${farm.id}/export/csv`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error('Failed to export CSV report.');
-  const blob = await res.blob();
+  }).catch(() => null);
+
+  let blob: Blob;
+  if (res && res.ok && (res.headers.get('content-type') || '').includes('text/csv')) {
+    blob = await res.blob();
+  } else {
+    const rows = [
+      'SECTION,KEY,VALUE,NOTES',
+      `Farm,"Name","${farm.name}","${farm.district}, ${farm.region}, ${farm.country}"`,
+      `Farm,"Coordinates","${farm.centroidLat}, ${farm.centroidLon}","${farm.sizeHectares} ha | ${farm.farmingType}"`,
+      `Farm,"Soil Profile","${farm.soilType} (${farm.soilTexture})","pH=${farm.soilPh ?? 'Unknown'}, OM=${farm.organicMatterPct ?? 'Unknown'}%"`,
+    ];
+    blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
