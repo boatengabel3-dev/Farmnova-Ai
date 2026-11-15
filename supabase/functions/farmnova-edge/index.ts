@@ -2,7 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
 interface EdgeRequestBody {
-  action?: 'health' | 'nasa-telemetry' | 'rotation-brief' | 'ai-advisor';
+  action?: 'health' | 'nasa-telemetry' | 'weather-observations' | 'rotation-brief' | 'ai-advisor';
   payload?: Record<string, unknown>;
 }
 
@@ -23,19 +23,19 @@ function formatYyyymmdd(d: Date): string {
 async function handleNasaTelemetry(payload: Record<string, unknown>) {
   const lat = Number(payload.lat);
   const lon = Number(payload.lon);
-  const days = Math.min(365, Math.max(30, Number(payload.days ?? 120)));
+  const days = Math.min(365, Math.max(30, Number(payload.days ?? 180)));
 
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     throw new Error('Valid numeric lat and lon are required for nasa-telemetry.');
   }
 
   const end = new Date();
-  end.setUTCDate(end.getUTCDate() - 4);
+  end.setUTCDate(end.getUTCDate() - 1);
   const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - days);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
 
   const powerUrl =
-    `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M,T2M_MAX,PRECTOTCORR,GWETROOT` +
+    `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=PRECTOTCORR,T2M,T2M_MAX,GWETROOT` +
     `&community=AG&longitude=${lon.toFixed(4)}&latitude=${lat.toFixed(4)}` +
     `&start=${formatYyyymmdd(start)}&end=${formatYyyymmdd(end)}&format=JSON`;
 
@@ -47,6 +47,7 @@ async function handleNasaTelemetry(payload: Record<string, unknown>) {
   }
 
   const powerJson = await powerRes.json();
+  const fillValue = typeof powerJson?.header?.fill_value === 'number' ? powerJson.header.fill_value : -999;
   const params = powerJson?.properties?.parameter ?? {};
   const t2m = params.T2M ?? {};
   const t2mMax = params.T2M_MAX ?? {};
@@ -55,6 +56,7 @@ async function handleNasaTelemetry(payload: Record<string, unknown>) {
 
   const dates = Object.keys(precip).sort();
   let totalRainMm = 0;
+  let rainCount = 0;
   let tempSum = 0;
   let tempCount = 0;
   let heatDays = 0;
@@ -62,11 +64,25 @@ async function handleNasaTelemetry(payload: Record<string, unknown>) {
   let wetCount = 0;
   let currentDry = 0;
   let longestDry = 0;
+  let lastAvailableDate: string | null = null;
 
   for (const d of dates) {
     const p = Number(precip[d]);
-    if (Number.isFinite(p) && p > -900) {
+    const t = Number(t2m[d]);
+    const tx = Number(t2mMax[d]);
+    const w = Number(rootWet[d]);
+    const hasAny =
+      (Number.isFinite(p) && p > -900 && p !== fillValue) ||
+      (Number.isFinite(t) && t > -900 && t !== fillValue) ||
+      (Number.isFinite(w) && w > -900 && w !== fillValue);
+
+    if (hasAny) {
+      lastAvailableDate = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+    }
+
+    if (Number.isFinite(p) && p > -900 && p !== fillValue) {
       totalRainMm += p;
+      rainCount += 1;
       if (p < 1) {
         currentDry += 1;
         if (currentDry > longestDry) longestDry = currentDry;
@@ -74,17 +90,14 @@ async function handleNasaTelemetry(payload: Record<string, unknown>) {
         currentDry = 0;
       }
     }
-    const t = Number(t2m[d]);
-    if (Number.isFinite(t) && t > -900) {
+    if (Number.isFinite(t) && t > -900 && t !== fillValue) {
       tempSum += t;
       tempCount += 1;
     }
-    const tx = Number(t2mMax[d]);
-    if (Number.isFinite(tx) && tx > -900 && tx >= 35) {
+    if (Number.isFinite(tx) && tx > -900 && tx !== fillValue && tx >= 35) {
       heatDays += 1;
     }
-    const w = Number(rootWet[d]);
-    if (Number.isFinite(w) && w > -900) {
+    if (Number.isFinite(w) && w > -900 && w !== fillValue) {
       wetSum += w;
       wetCount += 1;
     }
@@ -98,15 +111,197 @@ async function handleNasaTelemetry(payload: Record<string, unknown>) {
   }
 
   return {
-    source: 'NASA POWER + SRTM Elevation (Supabase Edge)',
+    source: 'NASA POWER Daily Point API + SRTM Elevation (Supabase Edge)',
     coordinates: { lat, lon },
-    window: { start: dates[0] ?? null, end: dates[dates.length - 1] ?? null, daysObserved: dates.length },
+    lastAvailableDate,
+    window: { start: dates[0] ?? null, end: lastAvailableDate, daysObserved: rainCount },
     elevationMeters,
-    totalRainMm: Number(totalRainMm.toFixed(1)),
+    totalRainMm: rainCount > 0 ? Number(totalRainMm.toFixed(1)) : null,
     avgTempC: tempCount > 0 ? Number((tempSum / tempCount).toFixed(1)) : null,
     heatStressDaysAbove35C: heatDays,
     avgRootSoilWetness: wetCount > 0 ? Number((wetSum / wetCount).toFixed(3)) : null,
     longestDrySpellDays: longestDry,
+  };
+}
+
+/**
+ * Meteorological Weather API proxy (Meteomatics Weather API).
+ * Docs: https://www.meteomatics.com/en/api/getting-started/
+ * Base URL: https://api.meteomatics.com
+ * Auth: Server-side Supabase secrets ONLY (never exposed to browser):
+ *   - METEOMATICS_USERNAME & METEOMATICS_PASSWORD (recommended)
+ *   - or METEOMATICS_API_TOKEN (pre-issued OAuth2 Bearer token)
+ *   - or WEATHER_API_KEY in "username:password" format
+ * Returns temperature in °C and rainfall in mm/day matching NASA POWER units.
+ */
+function cleanMeteomaticsVal(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  // Meteomatics reserved missing / not-applicable sentinels (-666, -777, -888, -999)
+  if (n === -666 || n === -777 || n === -888 || n <= -900) return null;
+  return Number(n.toFixed(2));
+}
+
+async function resolveMeteomaticsAuthHeaders(): Promise<Record<string, string> | null> {
+  const staticToken = Deno.env.get('METEOMATICS_API_TOKEN')?.trim() || '';
+  if (staticToken) {
+    return { Authorization: `Bearer ${staticToken}` };
+  }
+
+  let username = Deno.env.get('METEOMATICS_USERNAME')?.trim() || '';
+  let password = Deno.env.get('METEOMATICS_PASSWORD')?.trim() || '';
+
+  if ((!username || !password) && Deno.env.get('WEATHER_API_KEY')?.includes(':')) {
+    const combined = Deno.env.get('WEATHER_API_KEY')!.trim();
+    const sep = combined.indexOf(':');
+    username = combined.slice(0, sep).trim();
+    password = combined.slice(sep + 1).trim();
+  }
+
+  if (!username || !password) {
+    return null;
+  }
+
+  const basicEncoded = btoa(`${username}:${password}`);
+  // Prefer Meteomatics OAuth2 token exchange as documented in Getting Started, fallback to HTTP Basic Auth
+  try {
+    const tokenRes = await fetch('https://login.meteomatics.com/api/v1/token', {
+      headers: { Authorization: `Basic ${basicEncoded}` },
+    });
+    if (tokenRes.ok) {
+      const tokenJson = await tokenRes.json();
+      if (tokenJson?.access_token) {
+        return { Authorization: `Bearer ${String(tokenJson.access_token)}` };
+      }
+    }
+  } catch {
+    // Fallback cleanly to direct HTTP Basic Auth
+  }
+
+  return { Authorization: `Basic ${basicEncoded}` };
+}
+
+async function handleWeatherObservations(payload: Record<string, unknown>) {
+  const lat = Number(payload.lat);
+  const lon = Number(payload.lon);
+  const days = Math.min(90, Math.max(7, Number(payload.days ?? 30)));
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    throw new Error('Valid numeric lat and lon are required for weather-observations.');
+  }
+
+  const baseMeta = {
+    sourceName: 'Meteomatics Weather API',
+    spatialResolution: '~1–10 km downscaled mix grid',
+    docsUrl: 'https://www.meteomatics.com/en/api/getting-started/',
+    fetchedAt: new Date().toISOString(),
+  };
+
+  const authHeaders = await resolveMeteomaticsAuthHeaders();
+  if (!authHeaders) {
+    return {
+      connected: false,
+      ...baseMeta,
+      lastAvailableDate: null,
+      last30DaysRainMm: null,
+      last30DaysAvgTempC: null,
+      last30DaysMaxTempC: null,
+      missingDaysCount: days,
+      daily: [],
+      errorMessage:
+        'Weather service not connected yet (set METEOMATICS_USERNAME and METEOMATICS_PASSWORD in Supabase secrets).',
+    };
+  }
+
+  // Query past `days` completed UTC days ending yesterday
+  const end = new Date();
+  end.setUTCDate(end.getUTCDate() - 1);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+
+  const startIso = `${start.toISOString().slice(0, 10)}T00:00:00Z`;
+  const endIso = `${end.toISOString().slice(0, 10)}T00:00:00Z`;
+  const parameters = 't_mean_2m_24h:C,t_max_2m_24h:C,precip_24h:mm';
+  const location = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  const url = `https://api.meteomatics.com/${startIso}--${endIso}:P1D/${parameters}/${location}/json`;
+
+  const upstream = await fetch(url, { headers: authHeaders });
+  if (!upstream.ok) {
+    const statusHint =
+      upstream.status === 401 || upstream.status === 403
+        ? 'Meteomatics credentials rejected or plan lacks access (HTTP ' + upstream.status + ').'
+        : `Weather service unavailable (HTTP ${upstream.status}).`;
+    return {
+      connected: false,
+      ...baseMeta,
+      lastAvailableDate: null,
+      last30DaysRainMm: null,
+      last30DaysAvgTempC: null,
+      last30DaysMaxTempC: null,
+      missingDaysCount: days,
+      daily: [],
+      errorMessage: `Weather service not connected yet — ${statusHint}`,
+    };
+  }
+
+  const json = await upstream.json();
+  const dataSeries: Array<{
+    parameter?: string;
+    coordinates?: Array<{ dates?: Array<{ date?: string; value?: unknown }> }>;
+  }> = Array.isArray(json?.data) ? json.data : [];
+
+  const byDate = new Map<
+    string,
+    { date: string; tempMeanC: number | null; tempMaxC: number | null; precipMm: number | null }
+  >();
+
+  for (const paramBlock of dataSeries) {
+    const paramName = String(paramBlock?.parameter || '');
+    const coordDates = paramBlock?.coordinates?.[0]?.dates;
+    if (!Array.isArray(coordDates)) continue;
+
+    for (const pt of coordDates) {
+      const isoDate = String(pt?.date || '').slice(0, 10);
+      if (!isoDate) continue;
+      const entry = byDate.get(isoDate) ?? {
+        date: isoDate,
+        tempMeanC: null,
+        tempMaxC: null,
+        precipMm: null,
+      };
+      const val = cleanMeteomaticsVal(pt?.value);
+      if (paramName.startsWith('t_mean_2m_24h')) entry.tempMeanC = val;
+      else if (paramName.startsWith('t_max_2m_24h')) entry.tempMaxC = val;
+      else if (paramName.startsWith('precip_24h')) entry.precipMm = val;
+      byDate.set(isoDate, entry);
+    }
+  }
+
+  const daily = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const recent30 = daily.slice(-30);
+  const validRain = recent30.map((d) => d.precipMm).filter((v): v is number => v !== null);
+  const validTemp = recent30.map((d) => d.tempMeanC).filter((v): v is number => v !== null);
+  const validTMax = recent30.map((d) => d.tempMaxC).filter((v): v is number => v !== null);
+  const missingDaysCount = recent30.filter((d) => d.precipMm === null || d.tempMeanC === null).length;
+
+  let lastAvailableDate: string | null = null;
+  for (let i = recent30.length - 1; i >= 0; i--) {
+    if (recent30[i].precipMm !== null || recent30[i].tempMeanC !== null) {
+      lastAvailableDate = recent30[i].date;
+      break;
+    }
+  }
+
+  return {
+    connected: true,
+    ...baseMeta,
+    lastAvailableDate,
+    last30DaysRainMm: validRain.length > 0 ? Number(validRain.reduce((s, v) => s + v, 0).toFixed(1)) : null,
+    last30DaysAvgTempC: validTemp.length > 0 ? Number((validTemp.reduce((s, v) => s + v, 0) / validTemp.length).toFixed(1)) : null,
+    last30DaysMaxTempC: validTMax.length > 0 ? Number(Math.max(...validTMax).toFixed(1)) : null,
+    missingDaysCount,
+    daily: recent30,
   };
 }
 
@@ -244,13 +439,16 @@ Deno.serve(async (req: Request) => {
           functionSlug: 'farmnova-edge',
           runtime: 'deno-edge',
           status: 'healthy',
-          supportedActions: ['health', 'nasa-telemetry', 'rotation-brief', 'ai-advisor'],
+          supportedActions: ['health', 'nasa-telemetry', 'weather-observations', 'rotation-brief', 'ai-advisor'],
           authenticatedUserId,
           timestamp: new Date().toISOString(),
         };
         break;
       case 'nasa-telemetry':
         data = await handleNasaTelemetry(payload);
+        break;
+      case 'weather-observations':
+        data = await handleWeatherObservations(payload);
         break;
       case 'rotation-brief':
         data = handleRotationBrief(payload);

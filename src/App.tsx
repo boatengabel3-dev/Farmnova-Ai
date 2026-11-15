@@ -7,6 +7,7 @@ import {
   Edit3,
   FileSpreadsheet,
   FileText,
+  HelpCircle,
   LayoutDashboard,
   LogOut,
   Map as MapIcon,
@@ -23,6 +24,7 @@ import {
 import { BrandMark } from './components/BrandMark';
 import { LandingAuthView } from './components/LandingAuthView';
 import { FarmOnboardingModal } from './components/FarmOnboardingModal';
+import { GuidedTourModal } from './components/GuidedTourModal';
 import { FarmMapPanel } from './components/FarmMapPanel';
 import { EnvironmentalModule } from './components/EnvironmentalModule';
 import { RotationStrategyView } from './components/RotationStrategyView';
@@ -61,6 +63,16 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [editingFarm, setEditingFarm] = useState<Farm | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showTour, setShowTour] = useState(false);
+
+  const handleCloseTour = () => {
+    try {
+      localStorage.setItem('farmnova_tour_completed_v1', '1');
+    } catch {
+      // ignore storage quota errors
+    }
+    setShowTour(false);
+  };
 
   // Check existing session on load
   useEffect(() => {
@@ -100,6 +112,17 @@ export default function App() {
       loadWorkspaceData(user);
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user || showOnboarding) return;
+    try {
+      if (!localStorage.getItem('farmnova_tour_completed_v1')) {
+        setShowTour(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, [user?.id, showOnboarding]);
 
   // Fetch NASA environmental analysis & rotation strategies for selected farm
   async function loadFarmAnalysis(farmId: string, forceRefresh = false) {
@@ -297,6 +320,15 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowTour(true)}
+              className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-1.5 text-xs font-medium rounded-lg border border-[#D8D2C3] text-[#2E3E35] hover:border-[#0E4D3A] whitespace-nowrap"
+              title="Open Workspace Guided Tour"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-[#0E4D3A]" />
+              <span className="hidden sm:inline">Tour</span>
+            </button>
             <LanguageSelector />
             {selectedFarm && (
               <button
@@ -495,7 +527,7 @@ export default function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-5">
                   <div>
                     <div className="text-xs text-[#5E6D64] flex items-center gap-1.5">
-                      <CloudRain className="w-3.5 h-3.5 text-[#0E4D3A]" /> 12-Month Rainfall
+                      <CloudRain className="w-3.5 h-3.5 text-[#0E4D3A]" /> 180-Day Rainfall
                     </div>
                     <div className="font-mono text-2xl font-semibold text-[#132A20] mt-1">
                       {analysis.periodSummary.totalRainMm ?? 'N/A'}{' '}
@@ -762,7 +794,7 @@ export default function App() {
                   <div>
                     <h3 className="font-display text-lg font-semibold text-[#132A20]">Full Telemetry & Rotation Dataset (CSV)</h3>
                     <p className="text-xs text-[#47564E] mt-1 leading-relaxed">
-                      Spreadsheet-ready export with 365 days of NASA POWER daily temperature, rainfall, soil wetness, derived ET0, and strategy comparison rows.
+                      Spreadsheet-ready export with 180 days of NASA POWER daily temperature, rainfall, soil wetness, derived ET0, and strategy comparison rows.
                     </p>
                   </div>
                   <button
@@ -787,6 +819,14 @@ export default function App() {
           isFirstOnboarding={farms.length === 0}
           onSave={handleSaveFarm}
           onClose={() => { setShowOnboarding(false); setEditingFarm(null); }}
+        />
+      )}
+
+      {/* First-Visit Guided Workspace Tour */}
+      {showTour && !showOnboarding && (
+        <GuidedTourModal
+          onClose={handleCloseTour}
+          onJumpToTab={(tab) => setActiveTab(tab)}
         />
       )}
     </div>

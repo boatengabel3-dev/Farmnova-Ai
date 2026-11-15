@@ -19,14 +19,15 @@ function formatIsoDate(yyyymmdd: string): string {
   return `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
 }
 
-function cleanVal(v: number | undefined): number | null {
-  if (v === undefined || v === null || Number.isNaN(v) || v <= -900) return null;
+function cleanVal(v: unknown, fillValue = -999): number | null {
+  if (v === undefined || v === null || typeof v !== 'number' || Number.isNaN(v)) return null;
+  if (v <= -900 || v === fillValue) return null;
   return Number(v.toFixed(3));
 }
 
 /**
- * Simplified FAO-56 Penman-Monteith daily reference ET0 approximation (mm/day)
- * using NASA POWER T2M, T2M_MAX, T2M_MIN, ALLSKY_SFC_SW_DWN (MJ/m2/day), RH2M, and elevation.
+ * Reference ET0 calculation (mm/day) using only observed NASA POWER inputs.
+ * Missing inputs remain null — never filled with estimated defaults.
  */
 function estimateDailyEt0(
   tMean: number | null,
@@ -34,30 +35,34 @@ function estimateDailyEt0(
   tMin: number | null,
   rsMj: number | null,
   rh: number | null,
-  elevM: number
+  elevM: number | null
 ): number | null {
-  if (tMean === null || rsMj === null) return null;
-  const tmax = tMax ?? tMean + 4;
-  const tmin = tMin ?? tMean - 4;
-  const rhVal = rh ?? 65;
-  const es = 0.5 * (0.6108 * Math.exp((17.27 * tmax) / (tmax + 237.3)) + 0.6108 * Math.exp((17.27 * tmin) / (tmin + 237.3)));
-  const ea = es * (Math.min(100, Math.max(10, rhVal)) / 100);
+  if (tMean === null || tMax === null || tMin === null || rsMj === null || rh === null) {
+    return null;
+  }
+  const elev = elevM ?? 200;
+  const es =
+    0.5 *
+    (0.6108 * Math.exp((17.27 * tMax) / (tMax + 237.3)) +
+      0.6108 * Math.exp((17.27 * tMin) / (tMin + 237.3)));
+  const ea = es * (Math.min(100, Math.max(10, rh)) / 100);
   const vpd = Math.max(0.05, es - ea);
-  const delta = (4098 * (0.6108 * Math.exp((17.27 * tMean) / (tMean + 237.3)))) / Math.pow(tMean + 237.3, 2);
-  const pressure = 101.3 * Math.pow((293 - 0.0065 * elevM) / 293, 5.26);
+  const delta =
+    (4098 * (0.6108 * Math.exp((17.27 * tMean) / (tMean + 237.3)))) / Math.pow(tMean + 237.3, 2);
+  const pressure = 101.3 * Math.pow((293 - 0.0065 * elev) / 293, 5.26);
   const gamma = 0.000665 * pressure;
-  const rn = 0.77 * rsMj - 1.8; // net radiation approximation
-  const u2 = 1.8; // baseline 2m wind speed m/s where station anemometer absent
+  const rn = 0.77 * rsMj - 1.8;
+  const u2 = 1.8;
   const num = 0.408 * delta * Math.max(0, rn) + gamma * (900 / (tMean + 273)) * u2 * vpd;
   const den = delta + gamma * (1 + 0.34 * u2);
-  const et0 = Math.max(0.4, num / den);
+  const et0 = Math.max(0.2, num / den);
   return Number(et0.toFixed(2));
 }
 
 export async function fetchFarmEnvironmentalAnalysis(farm: Farm, forceRefresh = false): Promise<EnvironmentalAnalysis> {
   const lat = Number(farm.centroidLat.toFixed(4));
   const lon = Number(farm.centroidLon.toFixed(4));
-  const cacheKey = `env_${lat}_${lon}_v2`;
+  const cacheKey = `farm_${farm.id}_${lat}_${lon}_180d_v3`;
 
   if (!forceRefresh) {
     const cached = db
@@ -70,19 +75,21 @@ export async function fetchFarmEnvironmentalAnalysis(farm: Farm, forceRefresh = 
     }
   }
 
-  // Compute safe operational NASA POWER query window (accounting for ~8 day MERRA-2/POWER latency)
+  // Request the last 180 days up to yesterday; trailing lag days with fill_value (-999)
+  // are trimmed cleanly below so lastAvailableDate reflects NASA POWER's latest release.
   const now = new Date();
-  const endObj = new Date(now.getTime() - 8 * 86400 * 1000);
-  const startObj = new Date(endObj.getTime() - 364 * 86400 * 1000);
+  const endObj = new Date(now.getTime() - 1 * 86400 * 1000);
+  const startObj = new Date(endObj.getTime() - 179 * 86400 * 1000);
   const startStr = formatYyyymmdd(startObj);
   const endStr = formatYyyymmdd(endObj);
 
+  // 10-year monthly climatology window for the same farm centroid
   const currentYear = endObj.getUTCFullYear();
-  const monthlyStartYear = currentYear - 4;
+  const monthlyStartYear = Math.max(1981, currentYear - 10);
   const monthlyEndYear = currentYear;
 
-  const dailyUrl = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M,T2M_MAX,T2M_MIN,PRECTOTCORR,GWETTOP,GWETROOT,ALLSKY_SFC_SW_DWN,RH2M&community=AG&longitude=${lon}&latitude=${lat}&start=${startStr}&end=${endStr}&format=JSON`;
-  const monthlyUrl = `https://power.larc.nasa.gov/api/temporal/monthly/point?parameters=T2M,PRECTOTCORR,GWETROOT&community=AG&longitude=${lon}&latitude=${lat}&start=${monthlyStartYear}&end=${monthlyEndYear}&format=JSON`;
+  const dailyUrl = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=PRECTOTCORR,T2M,T2M_MAX,T2M_MIN,GWETROOT,GWETTOP,ALLSKY_SFC_SW_DWN,RH2M&community=AG&longitude=${lon}&latitude=${lat}&start=${startStr}&end=${endStr}&format=JSON`;
+  const monthlyUrl = `https://power.larc.nasa.gov/api/temporal/monthly/point?parameters=PRECTOTCORR,T2M,T2M_MAX,GWETROOT&community=AG&longitude=${lon}&latitude=${lat}&start=${monthlyStartYear}&end=${monthlyEndYear}&format=JSON`;
 
   // Sample 5 points (~220m offset) for SRTM/Copernicus DEM slope estimation
   const offset = 0.002;
@@ -141,28 +148,34 @@ export async function fetchFarmEnvironmentalAnalysis(farm: Farm, forceRefresh = 
       ? `Moderate undulating slope (~${terrainSlopePct}%): contour planting, residue retention, or living cover crops are advised to curb topsoil runoff.`
       : `Steeper slope (~${terrainSlopePct}%): elevated water erosion vulnerability during intense rainfall; contour bunds and dense cover crops strongly advised.`;
 
-  // Parse Daily NASA POWER series
-  const dailySeries: DailyWeatherPoint[] = [];
+  // Parse Daily NASA POWER series (verified against POWER OpenAPI schema: properties.parameter & header.fill_value)
+  const rawDailySeries: DailyWeatherPoint[] = [];
   let missingPowerCount = 0;
   let missingSmapCount = 0;
 
-  if (dailyJson?.properties?.parameter) {
+  if (dailyJson?.properties?.parameter && typeof dailyJson.properties.parameter === 'object') {
+    const fillVal = typeof dailyJson?.header?.fill_value === 'number' ? dailyJson.header.fill_value : -999;
     const p = dailyJson.properties.parameter;
-    const dates = Object.keys(p.T2M || {}).sort();
+    const dateSet = new Set<string>([
+      ...Object.keys(p.PRECTOTCORR || {}),
+      ...Object.keys(p.T2M || {}),
+      ...Object.keys(p.T2M_MAX || {}),
+      ...Object.keys(p.GWETROOT || {}),
+    ]);
+    const dates = Array.from(dateSet)
+      .filter((k) => /^\d{8}$/.test(k))
+      .sort();
     for (const d of dates) {
-      const tMean = cleanVal(p.T2M?.[d]);
-      const tMax = cleanVal(p.T2M_MAX?.[d]);
-      const tMin = cleanVal(p.T2M_MIN?.[d]);
-      const precip = cleanVal(p.PRECTOTCORR?.[d]);
-      const smTop = cleanVal(p.GWETTOP?.[d]);
-      const smRoot = cleanVal(p.GWETROOT?.[d]);
-      const solar = cleanVal(p.ALLSKY_SFC_SW_DWN?.[d]);
-      const rh = cleanVal(p.RH2M?.[d]);
+      const tMean = cleanVal(p.T2M?.[d], fillVal);
+      const tMax = cleanVal(p.T2M_MAX?.[d], fillVal);
+      const tMin = cleanVal(p.T2M_MIN?.[d], fillVal);
+      const precip = cleanVal(p.PRECTOTCORR?.[d], fillVal);
+      const smTop = cleanVal(p.GWETTOP?.[d], fillVal);
+      const smRoot = cleanVal(p.GWETROOT?.[d], fillVal);
+      const solar = cleanVal(p.ALLSKY_SFC_SW_DWN?.[d], fillVal);
+      const rh = cleanVal(p.RH2M?.[d], fillVal);
 
-      if (tMean === null || precip === null) missingPowerCount++;
-      if (smTop === null || smRoot === null) missingSmapCount++;
-
-      dailySeries.push({
+      rawDailySeries.push({
         date: formatIsoDate(d),
         tempMeanC: tMean,
         tempMaxC: tMax,
@@ -172,32 +185,83 @@ export async function fetchFarmEnvironmentalAnalysis(farm: Farm, forceRefresh = 
         soilMoistureRoot: smRoot,
         solarRadiation: solar,
         humidityPct: rh,
-        et0Mm: estimateDailyEt0(tMean, tMax, tMin, solar, rh, elevationMeters ?? 200),
+        et0Mm: estimateDailyEt0(tMean, tMax, tMin, solar, rh, elevationMeters),
       });
     }
   }
 
-  // Parse Monthly NASA POWER series (filtering out month '13' annual summaries)
+  // Trim trailing days where NASA POWER has not yet published data (all core parameters are fill_value / null)
+  let lastValidIdx = rawDailySeries.length - 1;
+  while (
+    lastValidIdx >= 0 &&
+    rawDailySeries[lastValidIdx].precipMm === null &&
+    rawDailySeries[lastValidIdx].tempMeanC === null &&
+    rawDailySeries[lastValidIdx].tempMaxC === null &&
+    rawDailySeries[lastValidIdx].soilMoistureRoot === null
+  ) {
+    lastValidIdx--;
+  }
+  const dailySeries = lastValidIdx >= 0 ? rawDailySeries.slice(0, lastValidIdx + 1) : rawDailySeries;
+  const lastAvailableDate = dailySeries.length > 0 ? dailySeries[dailySeries.length - 1].date : null;
+
+  for (const pt of dailySeries) {
+    if (pt.tempMeanC === null || pt.precipMm === null) missingPowerCount++;
+    if (pt.soilMoistureTop === null || pt.soilMoistureRoot === null) missingSmapCount++;
+  }
+
+  // Parse 10-Year Monthly NASA POWER series + compute 10-year monthly climatology (JAN..DEC)
   const monthlySeries: MonthlyClimatePoint[] = [];
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  if (monthlyJson?.properties?.parameter) {
+  const monthDays = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const climoBuckets = Array.from({ length: 12 }, () => ({
+    precip: [] as number[],
+    temp: [] as number[],
+    tmax: [] as number[],
+    root: [] as number[],
+  }));
+
+  if (monthlyJson?.properties?.parameter && typeof monthlyJson.properties.parameter === 'object') {
+    const mFill = typeof monthlyJson?.header?.fill_value === 'number' ? monthlyJson.header.fill_value : -999;
     const mp = monthlyJson.properties.parameter;
-    const keys = Object.keys(mp.T2M || {})
-      .filter((k) => !k.endsWith('13'))
+    const keys = Object.keys(mp.T2M || mp.PRECTOTCORR || {})
+      .filter((k) => /^\d{6}$/.test(k) && !k.endsWith('13'))
       .sort();
     for (const k of keys) {
       const yr = k.slice(0, 4);
       const mo = Number(k.slice(4, 6));
       if (mo < 1 || mo > 12) continue;
+      const pVal = cleanVal(mp.PRECTOTCORR?.[k], mFill);
+      const tVal = cleanVal(mp.T2M?.[k], mFill);
+      const txVal = cleanVal(mp.T2M_MAX?.[k], mFill);
+      const rVal = cleanVal(mp.GWETROOT?.[k], mFill);
+
+      if (pVal !== null) climoBuckets[mo - 1].precip.push(pVal);
+      if (tVal !== null) climoBuckets[mo - 1].temp.push(tVal);
+      if (txVal !== null) climoBuckets[mo - 1].tmax.push(txVal);
+      if (rVal !== null) climoBuckets[mo - 1].root.push(rVal);
+
       monthlySeries.push({
         month: `${yr}-${String(mo).padStart(2, '0')}`,
         label: `${monthNames[mo - 1]} ${yr.slice(2)}`,
-        precipMm: cleanVal(mp.PRECTOTCORR?.[k]),
-        tempMeanC: cleanVal(mp.T2M?.[k]),
-        soilMoistureRoot: cleanVal(mp.GWETROOT?.[k]),
+        precipMm: pVal,
+        tempMeanC: tVal,
+        soilMoistureRoot: rVal,
       });
     }
   }
+
+  const climatology10Yr = climoBuckets.map((b, idx) => {
+    const avgP = b.precip.length > 0 ? Number((b.precip.reduce((s, v) => s + v, 0) / b.precip.length).toFixed(2)) : null;
+    return {
+      monthIndex: idx + 1,
+      label: monthNames[idx],
+      avgPrecipMmPerDay: avgP,
+      avgMonthlyRainMm: avgP !== null ? Number((avgP * monthDays[idx]).toFixed(1)) : null,
+      avgTempC: b.temp.length > 0 ? Number((b.temp.reduce((s, v) => s + v, 0) / b.temp.length).toFixed(1)) : null,
+      avgMaxTempC: b.tmax.length > 0 ? Number((b.tmax.reduce((s, v) => s + v, 0) / b.tmax.length).toFixed(1)) : null,
+      avgRootWetness: b.root.length > 0 ? Number((b.root.reduce((s, v) => s + v, 0) / b.root.length).toFixed(3)) : null,
+    };
+  });
 
   // Compute summary statistics from verified live series
   const validPrecip = dailySeries.map((d) => d.precipMm).filter((v): v is number => v !== null);
@@ -247,11 +311,12 @@ export async function fetchFarmEnvironmentalAnalysis(farm: Farm, forceRefresh = 
   const waterBalanceMm =
     totalRainMm !== null && estimatedAnnualEt0Mm !== null ? Number((totalRainMm - estimatedAnnualEt0Mm).toFixed(0)) : null;
 
-  const recent30Rain = dailySeries
-    .slice(-30)
-    .map((d) => d.precipMm)
-    .filter((v): v is number => v !== null)
-    .reduce((a, b) => a + b, 0);
+  const last30Slice = dailySeries.slice(-30);
+  const valid30Rain = last30Slice.map((d) => d.precipMm).filter((v): v is number => v !== null);
+  const valid30Temp = last30Slice.map((d) => d.tempMeanC).filter((v): v is number => v !== null);
+  const last30DaysRainMm = valid30Rain.length > 0 ? Number(valid30Rain.reduce((a, b) => a + b, 0).toFixed(1)) : null;
+  const last30DaysAvgTempC = valid30Temp.length > 0 ? Number((valid30Temp.reduce((a, b) => a + b, 0) / valid30Temp.length).toFixed(1)) : null;
+  const recent30Rain = last30DaysRainMm ?? 0;
   const recent30Root =
     dailySeries
       .slice(-30)
@@ -472,10 +537,13 @@ export async function fetchFarmEnvironmentalAnalysis(farm: Farm, forceRefresh = 
     elevationMeters,
     terrainSlopePct,
     erosionRiskContext,
+    lastAvailableDate,
     periodSummary: {
-      startDate: dailySeries[0]?.date ?? startStr,
-      endDate: dailySeries[dailySeries.length - 1]?.date ?? endStr,
+      startDate: dailySeries[0]?.date ?? formatIsoDate(startStr),
+      endDate: lastAvailableDate ?? formatIsoDate(endStr),
       totalRainMm,
+      last30DaysRainMm,
+      last30DaysAvgTempC,
       avgTempC,
       maxTempObservedC,
       heatStressDaysAbove35C,
@@ -491,6 +559,7 @@ export async function fetchFarmEnvironmentalAnalysis(farm: Farm, forceRefresh = 
     },
     dailySeries,
     monthlySeries,
+    climatology10Yr,
     datasets,
     insights,
     areasForInvestigation,

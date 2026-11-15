@@ -19,6 +19,7 @@ import { generateRotationStrategies, simulateClimateScenarios } from './server/r
 import { askAgriAssistant } from './server/aiAssistant.ts';
 import { evaluatePotentialHazards, fetchRealtimeForecast } from './server/weatherHazards.ts';
 import { getSupabaseEdgeStatus, invokeSupabaseEdge, resolveSupabaseConfig, type EdgeAction } from './server/supabaseEdge.ts';
+import { getVerifiedGibsCapabilities } from './server/gibs.ts';
 import type { ClimateScenarioParams, Crop, Farm, GeoPoint, User, UserRole } from './src/types.ts';
 
 initDatabase();
@@ -749,6 +750,17 @@ app.get('/api/farms/:id/export/csv', requireAuth, async (req: AuthedRequest, res
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${farm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-farmnova-report.csv"`);
   res.send(lines.join('\n'));
+});
+
+// ---------------- NASA GIBS CAPABILITIES ----------------
+app.get('/api/gibs/capabilities', requireAuth, async (req: AuthedRequest, res: Response) => {
+  try {
+    const refresh = req.query.refresh === '1';
+    const data = await getVerifiedGibsCapabilities(refresh);
+    res.json(data);
+  } catch (err: any) {
+    res.status(502).json({ error: err?.message || 'Unable to load NASA GIBS capabilities.' });
+  }
 });
 
 // ---------------- SUPABASE EDGE FUNCTION BRIDGE ----------------

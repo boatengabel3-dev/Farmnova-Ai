@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Layers, Mountain, Satellite } from 'lucide-react';
-import type { EnvironmentalAnalysis, Farm } from '../types';
+import { Calendar, Layers, Mountain, Satellite } from 'lucide-react';
+import { api } from '../lib/api';
+import type { EnvironmentalAnalysis, Farm, GibsLayerCapability } from '../types';
 
 interface Props {
   farm: Farm;
@@ -10,101 +11,33 @@ interface Props {
 }
 
 type BaseMapType = 'imagery' | 'streets';
-type NasaOverlayId = 'none' | 'ndvi' | 'lst' | 'precip' | 'smap' | 'truecolor';
 
-interface NasaLayerMeta {
-  id: NasaOverlayId;
-  label: string;
-  mission: string;
-  gibsLayer: string;
-  resolution: string;
-  legendText: string;
-  colorRamp: Array<{ color: string; label: string }>;
+function offsetIsoDate(maxDate: string, daysBack: number): string {
+  const base = new Date(`${maxDate}T00:00:00Z`);
+  if (Number.isNaN(base.getTime())) {
+    return new Date(Date.now() - daysBack * 86400 * 1000).toISOString().slice(0, 10);
+  }
+  const shifted = new Date(base.getTime() - daysBack * 86400 * 1000);
+  return shifted.toISOString().slice(0, 10);
 }
 
-const NASA_LAYERS: NasaLayerMeta[] = [
-  {
-    id: 'none',
-    label: 'Boundary Only',
-    mission: 'Local Polygon',
-    gibsLayer: '',
-    resolution: 'Field polygon',
-    legendText: 'Displays your drawn plot outline over base satellite imagery or street topography.',
-    colorRamp: [],
-  },
-  {
-    id: 'ndvi',
-    label: 'Vegetation (MODIS NDVI)',
-    mission: 'NASA MODIS Terra 8-Day',
-    gibsLayer: 'MODIS_Terra_NDVI_8Day',
-    resolution: '250 m / pixel',
-    legendText: 'Higher green intensity indicates denser photosynthetic canopy across 250 m pixels (may blend neighboring plots).',
-    colorRamp: [
-      { color: '#C8B08A', label: 'Sparse / Bare' },
-      { color: '#7BB661', label: 'Moderate Canopy' },
-      { color: '#1B5E20', label: 'Dense Greenness' },
-    ],
-  },
-  {
-    id: 'lst',
-    label: 'Surface Temp (MODIS LST)',
-    mission: 'NASA MODIS Thermal Day',
-    gibsLayer: 'MODIS_Terra_Land_Surface_Temp_Day',
-    resolution: '1 km / pixel',
-    legendText: 'Daytime land-surface skin temperature context; cloud cover creates transparent gaps.',
-    colorRamp: [
-      { color: '#2B83BA', label: 'Cooler (<25°C)' },
-      { color: '#FDAE61', label: 'Warm (32–38°C)' },
-      { color: '#D7191C', label: 'Hot (>40°C)' },
-    ],
-  },
-  {
-    id: 'precip',
-    label: 'Rainfall (GPM IMERG)',
-    mission: 'NASA GPM Precipitation',
-    gibsLayer: 'IMERG_Precipitation_Rate',
-    resolution: '0.1° (~11 km)',
-    legendText: 'Satellite precipitation rate snapshot. Because cells span ~11 km, verify convective showers locally.',
-    colorRamp: [
-      { color: '#9ECAE1', label: 'Light Rain' },
-      { color: '#3182BD', label: 'Moderate' },
-      { color: '#08306B', label: 'Heavy Storm' },
-    ],
-  },
-  {
-    id: 'smap',
-    label: 'Soil Moisture (SMAP L4)',
-    mission: 'NASA SMAP Assimilated',
-    gibsLayer: 'SMAP_L4_Analyzed_Surface_Soil_Moisture',
-    resolution: '9 km / pixel',
-    legendText: 'Regional 0–5 cm surface soil moisture assimilation (9 km footprint); contextual rather than plot-exact.',
-    colorRamp: [
-      { color: '#D9A05B', label: 'Dry Surface' },
-      { color: '#74C476', label: 'Moist' },
-      { color: '#08519C', label: 'Wet / Saturated' },
-    ],
-  },
-  {
-    id: 'truecolor',
-    label: 'Orbital True Color',
-    mission: 'NASA MODIS Terra',
-    gibsLayer: 'MODIS_Terra_CorrectedReflectance_TrueColor',
-    resolution: '250 m / pixel',
-    legendText: 'Near-real-time orbital reflectance showing regional cloud cover, haze, and landscape greening.',
-    colorRamp: [],
-  },
-];
-
-function getRecentObsDate(daysBack: number): string {
-  const d = new Date(Date.now() - daysBack * 86400 * 1000);
-  return d.toISOString().slice(0, 10);
+function clampSliderDays(layer: GibsLayerCapability | null, desiredDaysBack: number): number {
+  if (!layer) return desiredDaysBack;
+  const minT = new Date(`${layer.minDate}T00:00:00Z`).getTime();
+  const maxT = new Date(`${layer.maxDate}T00:00:00Z`).getTime();
+  const spanDays = Math.max(1, Math.min(365, Math.floor((maxT - minT) / 86400000)));
+  return Math.max(0, Math.min(spanDays, desiredDaysBack));
 }
 
 export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
   const [baseMap, setBaseMap] = useState<BaseMapType>('imagery');
-  const [activeLayer, setActiveLayer] = useState<NasaOverlayId>('none');
-  const [opacity, setOpacity] = useState(0.68);
-  const [daysAgo, setDaysAgo] = useState(12);
+  const [capabilities, setCapabilities] = useState<GibsLayerCapability[]>([]);
+  const [capabilitiesSource, setCapabilitiesSource] = useState<string>(
+    'NASA GIBS WMTSCapabilities.xml (epsg3857/best)'
+  );
+  const [activeLayerId, setActiveLayerId] = useState<string>('none');
+  const [opacity, setOpacity] = useState(0.7);
+  const [daysBackFromLatest, setDaysBackFromLatest] = useState(0);
 
   const mapRef = useRef<HTMLDivElement | null>(null);
   const leafletRef = useRef<L.Map | null>(null);
@@ -112,8 +45,37 @@ export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
   const gibsLayerRef = useRef<L.TileLayer | null>(null);
   const boundaryGroupRef = useRef<L.LayerGroup | null>(null);
 
-  const gibsDate = getRecentObsDate(daysAgo);
-  const selectedMeta = NASA_LAYERS.find((l) => l.id === activeLayer) ?? NASA_LAYERS[0];
+  useEffect(() => {
+    let active = true;
+    api
+      .getGibsCapabilities()
+      .then((res) => {
+        if (!active) return;
+        setCapabilities(res.layers || []);
+        if (res.source) setCapabilitiesSource(res.source);
+      })
+      .catch(() => {
+        // Non-fatal; Boundary Only remains active
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedCapability = capabilities.find((c) => c.id === activeLayerId) ?? null;
+
+  const maxSliderDays = (() => {
+    if (!selectedCapability) return 180;
+    const minT = new Date(`${selectedCapability.minDate}T00:00:00Z`).getTime();
+    const maxT = new Date(`${selectedCapability.maxDate}T00:00:00Z`).getTime();
+    if (Number.isNaN(minT) || Number.isNaN(maxT)) return 180;
+    return Math.max(1, Math.min(365, Math.floor((maxT - minT) / 86400000)));
+  })();
+
+  const effectiveDaysBack = clampSliderDays(selectedCapability, daysBackFromLatest);
+  const gibsDate = selectedCapability
+    ? offsetIsoDate(selectedCapability.maxDate, effectiveDaysBack)
+    : new Date(Date.now() - 5 * 86400 * 1000).toISOString().slice(0, 10);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -135,7 +97,7 @@ export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
     };
   }, [farm.id, compact]);
 
-  // Update base map & boundary whenever farm or baseMap changes
+  // Update base map & farm boundary whenever farm or baseMap changes
   useEffect(() => {
     const map = leafletRef.current;
     const bGroup = boundaryGroupRef.current;
@@ -169,7 +131,7 @@ export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
           Slope: ${analysis.terrainSlopePct ?? 'N/A'}% · Soil: ${farm.soilTexture}
         </div>`
       );
-      if (activeLayer === 'none') {
+      if (activeLayerId === 'none') {
         map.fitBounds(poly.getBounds(), { padding: [36, 36], maxZoom: 16 });
       }
     } else {
@@ -183,7 +145,7 @@ export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
     }
   }, [farm, baseMap, analysis.elevationMeters, analysis.terrainSlopePct]);
 
-  // Update NASA GIBS WMTS overlay
+  // Update NASA GIBS WMTS overlay strictly from WMTSCapabilities metadata
   useEffect(() => {
     const map = leafletRef.current;
     if (!map) return;
@@ -192,23 +154,27 @@ export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
       gibsLayerRef.current = null;
     }
 
-    if (activeLayer !== 'none' && selectedMeta.gibsLayer) {
-      const matrixSet = activeLayer === 'truecolor' ? 'GoogleMapsCompatible_Level9' : 'GoogleMapsCompatible_Level9';
-      const ext = activeLayer === 'truecolor' ? 'jpg' : 'png';
-      const gibsUrl = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${selectedMeta.gibsLayer}/default/${gibsDate}/${matrixSet}/{z}/{y}/{x}.${ext}`;
+    if (selectedCapability) {
+      const maxNativeZoom = selectedCapability.tileMatrixSet.includes('Level6')
+        ? 6
+        : selectedCapability.tileMatrixSet.includes('Level7')
+        ? 7
+        : 9;
+      const gibsUrl = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${selectedCapability.id}/default/${gibsDate}/${selectedCapability.tileMatrixSet}/{z}/{y}/{x}.${selectedCapability.format}`;
+
       gibsLayerRef.current = L.tileLayer(gibsUrl, {
         opacity,
-        maxNativeZoom: 9,
+        maxNativeZoom,
         maxZoom: 18,
-        attribution: `NASA GIBS (${selectedMeta.mission})`,
+        attribution:
+          'Imagery provided by services from the Global Imagery Browse Services (GIBS), operated by the NASA/GSFC/Earth Science Data and Information System (ESDIS)',
       }).addTo(map);
 
-      // Zoom out slightly when viewing coarse orbital layers so regional grid context is visible
       if (map.getZoom() > 11) {
         map.setZoom(10);
       }
     }
-  }, [activeLayer, opacity, gibsDate, selectedMeta]);
+  }, [selectedCapability, opacity, gibsDate]);
 
   return (
     <div className="bg-white border border-[#E2DDD1] rounded-xl overflow-hidden">
@@ -216,7 +182,7 @@ export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
       <div className="px-4 py-3 border-b border-[#E2DDD1] flex flex-wrap items-center justify-between gap-3 bg-[#FAF8F3]">
         <div className="flex items-center gap-2">
           <Satellite className="w-4 h-4 text-[#0E4D3A]" />
-          <span className="text-sm font-semibold text-[#132A20]">Geospatial Farm & Satellite Layers</span>
+          <span className="text-sm font-semibold text-[#132A20]">Geospatial Farm &amp; NASA GIBS Satellite Layers</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -243,23 +209,36 @@ export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
         </div>
       </div>
 
-      {/* Satellite Overlay Selector */}
+      {/* Verified Capabilities Layer Picker */}
       {!compact && (
-        <div className="px-4 py-2.5 border-b border-[#ECE8DD] bg-white flex overflow-x-auto sm:flex-wrap items-center gap-1.5">
-          {NASA_LAYERS.map((layer) => (
-            <button
-              key={layer.id}
-              type="button"
-              onClick={() => setActiveLayer(layer.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-                activeLayer === layer.id
-                  ? 'bg-[#0E4D3A] text-[#FAF8F3]'
-                  : 'bg-[#F2EFE7] text-[#3B4A42] hover:bg-[#E5E0D3]'
-              }`}
+        <div className="px-4 py-2.5 border-b border-[#ECE8DD] bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <label htmlFor="gibs-layer-picker" className="text-xs font-semibold text-[#2E3E35] whitespace-nowrap">
+              NASA GIBS Layer:
+            </label>
+            <select
+              id="gibs-layer-picker"
+              value={activeLayerId}
+              onChange={(e) => {
+                setActiveLayerId(e.target.value);
+                setDaysBackFromLatest(0);
+              }}
+              className="w-full sm:w-auto flex-1 max-w-md px-3 py-1.5 text-xs bg-[#FAF8F3] border border-[#D8D2C3] rounded-lg font-medium text-[#132A20]"
             >
-              {layer.label}
-            </button>
-          ))}
+              <option value="none">Farm Boundary Only (Base Imagery)</option>
+              {capabilities.map((layer) => (
+                <option key={layer.id} value={layer.id}>
+                  {layer.title} ({layer.resolution})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedCapability && (
+            <div className="text-[11px] font-mono text-[#5E6D64] whitespace-nowrap">
+              Valid dates: {selectedCapability.minDate} to {selectedCapability.maxDate}
+            </div>
+          )}
         </div>
       )}
 
@@ -282,60 +261,92 @@ export function FarmMapPanel({ farm, analysis, compact = false }: Props) {
         </div>
       </div>
 
-      {/* Layer Controls, Timeline & Scientific Legend */}
+      {/* Date Slider, Layer Controls & GIBS Attribution */}
       {!compact && (
-        <div className="px-4 py-3.5 bg-[#FAF8F3] border-t border-[#E2DDD1] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1 max-w-2xl">
-            <div className="flex items-center gap-2 text-xs font-semibold text-[#132A20]">
-              <Layers className="w-3.5 h-3.5 text-[#0E4D3A]" />
-              <span>
-                {selectedMeta.mission} ({selectedMeta.resolution})
-              </span>
-              {activeLayer !== 'none' && <span className="font-mono text-[#5E6D64]">· Composite {gibsDate}</span>}
-            </div>
-            <p className="text-xs text-[#47564E]">{selectedMeta.legendText}</p>
-            {selectedMeta.colorRamp.length > 0 && (
-              <div className="flex flex-wrap items-center gap-4 pt-1">
-                {selectedMeta.colorRamp.map((c) => (
-                  <span key={c.label} className="inline-flex items-center gap-1.5 text-[11px] text-[#44544B]">
-                    <span className="w-3 h-3 rounded-xs border border-black/15" style={{ backgroundColor: c.color }} />
-                    {c.label}
+        <div className="px-4 py-3.5 bg-[#FAF8F3] border-t border-[#E2DDD1] space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="space-y-1 max-w-2xl">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-[#132A20]">
+                <Layers className="w-3.5 h-3.5 text-[#0E4D3A]" />
+                <span>
+                  {selectedCapability
+                    ? `${selectedCapability.mission} (${selectedCapability.resolution})`
+                    : 'Base Field Boundary'}
+                </span>
+                {selectedCapability && (
+                  <span className="font-mono text-[#0E4D3A] bg-white border border-[#C6D8CE] px-2 py-0.5 rounded">
+                    Date: {gibsDate}
                   </span>
-                ))}
+                )}
+              </div>
+              <p className="text-xs text-[#47564E]">
+                {selectedCapability
+                  ? selectedCapability.legendText
+                  : 'Displays your registered field outline over base satellite imagery or street topography.'}
+              </p>
+              {selectedCapability && selectedCapability.colorRamp.length > 0 && (
+                <div className="flex flex-wrap items-center gap-4 pt-1">
+                  {selectedCapability.colorRamp.map((c) => (
+                    <span key={c.label} className="inline-flex items-center gap-1.5 text-[11px] text-[#44544B]">
+                      <span
+                        className="w-3 h-3 rounded-xs border border-black/15"
+                        style={{ backgroundColor: c.color }}
+                      />
+                      {c.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {selectedCapability && (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5 text-xs shrink-0">
+                <label className="flex flex-col gap-1 min-w-[200px]">
+                  <span className="text-[#2E3E35] font-medium flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-[#0E4D3A]" /> Date Slider
+                    </span>
+                    <span className="font-mono text-[11px] text-[#0E4D3A]">{gibsDate}</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={maxSliderDays}
+                    step={1}
+                    value={maxSliderDays - effectiveDaysBack}
+                    onChange={(e) => setDaysBackFromLatest(maxSliderDays - Number(e.target.value))}
+                    className="w-full accent-[#0E4D3A]"
+                  />
+                  <span className="flex justify-between text-[10px] font-mono text-[#5E6D64]">
+                    <span>{offsetIsoDate(selectedCapability.maxDate, maxSliderDays)}</span>
+                    <span>{selectedCapability.maxDate}</span>
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2">
+                  <span className="text-[#47564E] font-medium">Opacity:</span>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={1}
+                    step={0.05}
+                    value={opacity}
+                    onChange={(e) => setOpacity(Number(e.target.value))}
+                    className="w-20 accent-[#0E4D3A]"
+                  />
+                </label>
               </div>
             )}
           </div>
 
-          {activeLayer !== 'none' && (
-            <div className="flex flex-wrap items-center gap-4 text-xs shrink-0">
-              <label className="flex items-center gap-2">
-                <span className="text-[#47564E] font-medium">Timeline:</span>
-                <select
-                  value={daysAgo}
-                  onChange={(e) => setDaysAgo(Number(e.target.value))}
-                  className="px-2 py-1 bg-white border border-[#D8D2C3] rounded text-xs font-mono"
-                >
-                  <option value={8}>8 days ago</option>
-                  <option value={16}>16 days ago</option>
-                  <option value={32}>1 month ago</option>
-                  <option value={90}>3 months ago</option>
-                  <option value={180}>6 months ago</option>
-                </select>
-              </label>
-              <label className="flex items-center gap-2">
-                <span className="text-[#47564E] font-medium">Opacity:</span>
-                <input
-                  type="range"
-                  min={0.2}
-                  max={1}
-                  step={0.05}
-                  value={opacity}
-                  onChange={(e) => setOpacity(Number(e.target.value))}
-                  className="w-20 accent-[#0E4D3A]"
-                />
-              </label>
-            </div>
-          )}
+          <div className="pt-2 border-t border-[#E2DDD1] text-[11px] text-[#5E6D64] flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <span>
+              Imagery provided by NASA Global Imagery Browse Services (GIBS), NASA/GSFC/ESDIS.
+            </span>
+            <span className="font-mono truncate max-w-md">
+              Capabilities: {capabilitiesSource.includes('WMTSCapabilities') ? 'WMTSCapabilities.xml (epsg3857/best)' : capabilitiesSource}
+            </span>
+          </div>
         </div>
       )}
     </div>

@@ -181,6 +181,51 @@ export interface FarmHazard {
   farmerActions: string[];
 }
 
+export interface Climatology10YrMonth {
+  monthIndex: number;
+  label: string;
+  avgPrecipMmPerDay: number | null;
+  avgMonthlyRainMm: number | null;
+  avgTempC: number | null;
+  avgMaxTempC: number | null;
+  avgRootWetness: number | null;
+}
+
+export interface WeatherComparisonDaily {
+  date: string;
+  tempMeanC: number | null;
+  tempMaxC: number | null;
+  precipMm: number | null;
+}
+
+export interface WeatherApiComparison {
+  connected: boolean;
+  sourceName: string;
+  spatialResolution: string;
+  docsUrl: string;
+  fetchedAt: string;
+  lastAvailableDate: string | null;
+  last30DaysRainMm: number | null;
+  last30DaysAvgTempC: number | null;
+  last30DaysMaxTempC: number | null;
+  missingDaysCount: number;
+  daily: WeatherComparisonDaily[];
+  errorMessage?: string;
+}
+
+export interface GibsLayerCapability {
+  id: string;
+  title: string;
+  mission: string;
+  tileMatrixSet: string;
+  format: 'png' | 'jpg';
+  minDate: string;
+  maxDate: string;
+  resolution: string;
+  legendText: string;
+  colorRamp: Array<{ color: string; label: string }>;
+}
+
 export interface EnvironmentalAnalysis {
   farmId: string;
   fetchedAt: string;
@@ -189,10 +234,13 @@ export interface EnvironmentalAnalysis {
   elevationMeters: number | null;
   terrainSlopePct: number | null;
   erosionRiskContext: string;
+  lastAvailableDate: string | null;
   periodSummary: {
     startDate: string;
     endDate: string;
     totalRainMm: number | null;
+    last30DaysRainMm: number | null;
+    last30DaysAvgTempC: number | null;
     avgTempC: number | null;
     maxTempObservedC: number | null;
     heatStressDaysAbove35C: number;
@@ -208,6 +256,7 @@ export interface EnvironmentalAnalysis {
   };
   dailySeries: DailyWeatherPoint[];
   monthlySeries: MonthlyClimatePoint[];
+  climatology10Yr: Climatology10YrMonth[];
   datasets: DatasetProvenance[];
   insights: EnvironmentalInsight[];
   areasForInvestigation: string[];

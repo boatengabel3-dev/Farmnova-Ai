@@ -6,8 +6,10 @@ import type {
   Crop,
   EnvironmentalAnalysis,
   Farm,
+  GibsLayerCapability,
   RotationStrategy,
   User,
+  WeatherApiComparison,
 } from '../types';
 
 import { getSupabaseClient, isSupabaseClientConfigured, SUPABASE_EDGE_FUNCTION_SLUG } from './supabase';
@@ -179,8 +181,51 @@ export const api = {
       supportedActions: string[];
     }>('/api/edge/status'),
 
+  getGibsCapabilities: (refresh = false) =>
+    apiFetch<{ source: string; fetchedAt: string; layers: GibsLayerCapability[] }>(
+      `/api/gibs/capabilities${refresh ? '?refresh=1' : ''}`
+    ),
+
+  getEdgeWeatherObservations: async (lat: number, lon: number, days = 30): Promise<WeatherApiComparison> => {
+    const fallbackError = (msg: string): WeatherApiComparison => ({
+      connected: false,
+      sourceName: 'Meteomatics Weather API',
+      spatialResolution: '~1–10 km downscaled mix grid',
+      docsUrl: 'https://www.meteomatics.com/en/api/getting-started/',
+      fetchedAt: new Date().toISOString(),
+      lastAvailableDate: null,
+      last30DaysRainMm: null,
+      last30DaysAvgTempC: null,
+      last30DaysMaxTempC: null,
+      missingDaysCount: days,
+      daily: [],
+      errorMessage: msg,
+    });
+
+    const supabase = getSupabaseClient();
+    if (!isSupabaseClientConfigured || !supabase) {
+      return fallbackError('Weather service not connected yet.');
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke(SUPABASE_EDGE_FUNCTION_SLUG, {
+        body: { action: 'weather-observations', payload: { lat, lon, days } },
+      });
+      if (error || !data || (data as any).ok === false) {
+        return fallbackError('Weather service not connected yet (deploy the farmnova-edge Supabase Edge Function).');
+      }
+      const payload = (data as any).data as WeatherApiComparison | undefined;
+      if (!payload || typeof payload.connected !== 'boolean') {
+        return fallbackError('Weather service not connected yet.');
+      }
+      return payload;
+    } catch {
+      return fallbackError('Weather service not connected yet.');
+    }
+  },
+
   invokeEdge: async (
-    action: 'health' | 'nasa-telemetry' | 'rotation-brief' | 'ai-advisor',
+    action: 'health' | 'nasa-telemetry' | 'weather-observations' | 'rotation-brief' | 'ai-advisor',
     payload: Record<string, unknown> = {},
     farmId?: string
   ) => {

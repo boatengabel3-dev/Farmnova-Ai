@@ -589,6 +589,94 @@ export async function handleStaticApiFallback<T>(
     return { ok: true } as T;
   }
 
+  // ---------------- NASA GIBS CAPABILITIES ----------------
+  if (pathname === '/api/gibs/capabilities' && method === 'GET') {
+    const maxRecent = new Date(Date.now() - 4 * 86400 * 1000).toISOString().slice(0, 10);
+    const maxSmap = new Date(Date.now() - 5 * 86400 * 1000).toISOString().slice(0, 10);
+    return {
+      source: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/WMTSCapabilities.xml',
+      fetchedAt: new Date().toISOString(),
+      layers: [
+        {
+          id: 'MODIS_Terra_NDVI_8Day',
+          title: 'Vegetation Index (rolling 8-Day, MODIS, Terra)',
+          mission: 'NASA MODIS Terra 8-Day Vegetation Index',
+          tileMatrixSet: 'GoogleMapsCompatible_Level9',
+          format: 'png',
+          minDate: '2025-02-12',
+          maxDate: maxRecent,
+          resolution: '250 m / pixel',
+          legendText: '8-day vegetation greenness (NDVI) across 250 m pixels.',
+          colorRamp: [
+            { color: '#C8B08A', label: 'Sparse / Bare' },
+            { color: '#7BB661', label: 'Moderate Canopy' },
+            { color: '#1B5E20', label: 'Dense Greenness' },
+          ],
+        },
+        {
+          id: 'MODIS_Aqua_Land_Surface_Temp_Day',
+          title: 'Land Surface Temperature (Day, MODIS, Aqua)',
+          mission: 'NASA MODIS Aqua Daytime Surface Temp',
+          tileMatrixSet: 'GoogleMapsCompatible_Level7',
+          format: 'png',
+          minDate: '2022-04-16',
+          maxDate: maxRecent,
+          resolution: '1 km / pixel',
+          legendText: 'Daytime land-surface temperature context; cloud cover creates transparent gaps.',
+          colorRamp: [
+            { color: '#2B83BA', label: 'Cooler (<25°C)' },
+            { color: '#FDAE61', label: 'Warm (32–38°C)' },
+            { color: '#D7191C', label: 'Hot (>40°C)' },
+          ],
+        },
+        {
+          id: 'IMERG_Precipitation_Rate',
+          title: 'Precipitation Rate (IMERG)',
+          mission: 'NASA GPM IMERG Precipitation Rate',
+          tileMatrixSet: 'GoogleMapsCompatible_Level6',
+          format: 'png',
+          minDate: '2025-05-01',
+          maxDate: maxRecent,
+          resolution: '0.1° (~11 km)',
+          legendText: 'Satellite precipitation rate snapshot (~11 km footprint).',
+          colorRamp: [
+            { color: '#9ECAE1', label: 'Light Rain' },
+            { color: '#3182BD', label: 'Moderate' },
+            { color: '#08306B', label: 'Heavy Storm' },
+          ],
+        },
+        {
+          id: 'SMAP_L4_Analyzed_Root_Zone_Soil_Moisture',
+          title: 'Root Zone Soil Moisture (L4, SMAP)',
+          mission: 'NASA SMAP L4 Root-Zone Soil Moisture',
+          tileMatrixSet: 'GoogleMapsCompatible_Level6',
+          format: 'png',
+          minDate: '2015-03-31',
+          maxDate: maxSmap,
+          resolution: '9 km / pixel',
+          legendText: 'Assimilated 0–100 cm root-zone soil moisture footprint (9 km).',
+          colorRamp: [
+            { color: '#D9A05B', label: 'Dry Root Zone' },
+            { color: '#74C476', label: 'Moist' },
+            { color: '#08519C', label: 'Wet / Saturated' },
+          ],
+        },
+        {
+          id: 'MODIS_Terra_CorrectedReflectance_TrueColor',
+          title: 'Corrected Reflectance (True Color, MODIS, Terra)',
+          mission: 'NASA MODIS Terra True Color',
+          tileMatrixSet: 'GoogleMapsCompatible_Level9',
+          format: 'jpg',
+          minDate: '2022-10-23',
+          maxDate: maxRecent,
+          resolution: '250 m / pixel',
+          legendText: 'Daily orbital reflectance showing regional cloud cover and greening.',
+          colorRamp: [],
+        },
+      ],
+    } as T;
+  }
+
   // ---------------- EDGE & ADMIN ----------------
   if (pathname === '/api/edge/status' && method === 'GET') {
     const configured = isSupabaseClientConfigured;
@@ -599,7 +687,7 @@ export async function handleStaticApiFallback<T>(
       endpoint: configured
         ? `${supabaseUrlValue.replace(/\/+$/, '')}/functions/v1/${SUPABASE_EDGE_FUNCTION_SLUG}`
         : `client-edge-bridge (${SUPABASE_EDGE_FUNCTION_SLUG})`,
-      supportedActions: ['health', 'nasa-telemetry', 'rotation-brief', 'ai-advisor'],
+      supportedActions: ['health', 'nasa-telemetry', 'weather-observations', 'rotation-brief', 'ai-advisor'],
     } as T;
   }
 

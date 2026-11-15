@@ -27,8 +27,11 @@ function formatIsoDate(yyyymmdd: string): string {
   return `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
 }
 
-function cleanVal(v: number | undefined): number | null {
-  if (v === undefined || v === null || Number.isNaN(v) || v <= -900) return null;
+import { readFarmPowerCache, writeFarmPowerCache } from './supabaseCache';
+
+function cleanVal(v: unknown, fillValue = -999): number | null {
+  if (v === undefined || v === null || typeof v !== 'number' || Number.isNaN(v)) return null;
+  if (v <= -900 || v === fillValue) return null;
   return Number(v.toFixed(3));
 }
 
@@ -38,27 +41,27 @@ function estimateDailyEt0(
   tMin: number | null,
   rsMj: number | null,
   rh: number | null,
-  elevM: number
+  elevM: number | null
 ): number | null {
-  if (tMean === null || rsMj === null) return null;
-  const tmax = tMax ?? tMean + 4;
-  const tmin = tMin ?? tMean - 4;
-  const rhVal = rh ?? 65;
+  if (tMean === null || tMax === null || tMin === null || rsMj === null || rh === null) {
+    return null;
+  }
+  const elev = elevM ?? 200;
   const es =
     0.5 *
-    (0.6108 * Math.exp((17.27 * tmax) / (tmax + 237.3)) +
-      0.6108 * Math.exp((17.27 * tmin) / (tmin + 237.3)));
-  const ea = es * (Math.min(100, Math.max(10, rhVal)) / 100);
+    (0.6108 * Math.exp((17.27 * tMax) / (tMax + 237.3)) +
+      0.6108 * Math.exp((17.27 * tMin) / (tMin + 237.3)));
+  const ea = es * (Math.min(100, Math.max(10, rh)) / 100);
   const vpd = Math.max(0.05, es - ea);
   const delta =
     (4098 * (0.6108 * Math.exp((17.27 * tMean) / (tMean + 237.3)))) / Math.pow(tMean + 237.3, 2);
-  const pressure = 101.3 * Math.pow((293 - 0.0065 * elevM) / 293, 5.26);
+  const pressure = 101.3 * Math.pow((293 - 0.0065 * elev) / 293, 5.26);
   const gamma = 0.000665 * pressure;
   const rn = 0.77 * rsMj - 1.8;
   const u2 = 1.8;
   const num = 0.408 * delta * Math.max(0, rn) + gamma * (900 / (tMean + 273)) * u2 * vpd;
   const den = delta + gamma * (1 + 0.34 * u2);
-  return Number(Math.max(0.4, num / den).toFixed(2));
+  return Number(Math.max(0.2, num / den).toFixed(2));
 }
 
 function decodeWmoWeather(code: number | null): { label: string; summary: string } {
@@ -250,18 +253,23 @@ export async function fetchStaticEnvironmentalAnalysis(farm: Farm): Promise<{
   analysis: EnvironmentalAnalysis;
   strategies: RotationStrategy[];
 }> {
+  const cached = await readFarmPowerCache(farm);
+  if (cached) {
+    return { analysis: cached, strategies: [] };
+  }
+
   const lat = Number(farm.centroidLat.toFixed(4));
   const lon = Number(farm.centroidLon.toFixed(4));
   const now = new Date();
-  const endObj = new Date(now.getTime() - 8 * 86400 * 1000);
-  const startObj = new Date(endObj.getTime() - 364 * 86400 * 1000);
+  const endObj = new Date(now.getTime() - 1 * 86400 * 1000);
+  const startObj = new Date(endObj.getTime() - 179 * 86400 * 1000);
   const startStr = formatYyyymmdd(startObj);
   const endStr = formatYyyymmdd(endObj);
   const currentYear = endObj.getUTCFullYear();
-  const monthlyStartYear = currentYear - 4;
+  const monthlyStartYear = Math.max(1981, currentYear - 10);
 
-  const dailyUrl = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M,T2M_MAX,T2M_MIN,PRECTOTCORR,GWETTOP,GWETROOT,ALLSKY_SFC_SW_DWN,RH2M&community=AG&longitude=${lon}&latitude=${lat}&start=${startStr}&end=${endStr}&format=JSON`;
-  const monthlyUrl = `https://power.larc.nasa.gov/api/temporal/monthly/point?parameters=T2M,PRECTOTCORR,GWETROOT&community=AG&longitude=${lon}&latitude=${lat}&start=${monthlyStartYear}&end=${currentYear}&format=JSON`;
+  const dailyUrl = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=PRECTOTCORR,T2M,T2M_MAX,T2M_MIN,GWETROOT,GWETTOP,ALLSKY_SFC_SW_DWN,RH2M&community=AG&longitude=${lon}&latitude=${lat}&start=${startStr}&end=${endStr}&format=JSON`;
+  const monthlyUrl = `https://power.larc.nasa.gov/api/temporal/monthly/point?parameters=PRECTOTCORR,T2M,T2M_MAX,GWETROOT&community=AG&longitude=${lon}&latitude=${lat}&start=${monthlyStartYear}&end=${currentYear}&format=JSON`;
   const offset = 0.002;
   const elevUrl = `https://api.open-meteo.com/v1/elevation?latitude=${lat},${(lat + offset).toFixed(4)},${(lat - offset).toFixed(4)},${lat},${lat}&longitude=${lon},${lon},${lon},${(lon + offset).toFixed(4)},${(lon - offset).toFixed(4)}`;
 
@@ -284,23 +292,33 @@ export async function fetchStaticEnvironmentalAnalysis(farm: Farm): Promise<{
     }
   }
 
-  const dailySeries: DailyWeatherPoint[] = [];
+  const rawDailySeries: DailyWeatherPoint[] = [];
   const pDaily = dailyRes?.properties?.parameter ?? null;
+  const fillVal = typeof dailyRes?.header?.fill_value === 'number' ? dailyRes.header.fill_value : -999;
   let missingPowerObs = 0;
 
-  if (pDaily?.T2M) {
-    const keys = Object.keys(pDaily.T2M).sort();
+  if (pDaily && typeof pDaily === 'object') {
+    const keys = Array.from(
+      new Set<string>([
+        ...Object.keys(pDaily.PRECTOTCORR || {}),
+        ...Object.keys(pDaily.T2M || {}),
+        ...Object.keys(pDaily.T2M_MAX || {}),
+        ...Object.keys(pDaily.GWETROOT || {}),
+      ])
+    )
+      .filter((k) => /^\d{8}$/.test(k))
+      .sort();
+
     for (const k of keys) {
-      const tMean = cleanVal(pDaily.T2M?.[k]);
-      const tMax = cleanVal(pDaily.T2M_MAX?.[k]);
-      const tMin = cleanVal(pDaily.T2M_MIN?.[k]);
-      const precip = cleanVal(pDaily.PRECTOTCORR?.[k]);
-      const smTop = cleanVal(pDaily.GWETTOP?.[k]);
-      const smRoot = cleanVal(pDaily.GWETROOT?.[k]);
-      const solar = cleanVal(pDaily.ALLSKY_SFC_SW_DWN?.[k]);
-      const rh = cleanVal(pDaily.RH2M?.[k]);
-      if (tMean === null || precip === null) missingPowerObs += 1;
-      dailySeries.push({
+      const tMean = cleanVal(pDaily.T2M?.[k], fillVal);
+      const tMax = cleanVal(pDaily.T2M_MAX?.[k], fillVal);
+      const tMin = cleanVal(pDaily.T2M_MIN?.[k], fillVal);
+      const precip = cleanVal(pDaily.PRECTOTCORR?.[k], fillVal);
+      const smTop = cleanVal(pDaily.GWETTOP?.[k], fillVal);
+      const smRoot = cleanVal(pDaily.GWETROOT?.[k], fillVal);
+      const solar = cleanVal(pDaily.ALLSKY_SFC_SW_DWN?.[k], fillVal);
+      const rh = cleanVal(pDaily.RH2M?.[k], fillVal);
+      rawDailySeries.push({
         date: formatIsoDate(k),
         tempMeanC: tMean,
         tempMaxC: tMax,
@@ -310,27 +328,76 @@ export async function fetchStaticEnvironmentalAnalysis(farm: Farm): Promise<{
         soilMoistureRoot: smRoot,
         solarRadiation: solar,
         humidityPct: rh,
-        et0Mm: estimateDailyEt0(tMean, tMax, tMin, solar, rh, elevationMeters ?? 200),
+        et0Mm: estimateDailyEt0(tMean, tMax, tMin, solar, rh, elevationMeters),
       });
     }
   }
 
+  let lastValidIdx = rawDailySeries.length - 1;
+  while (
+    lastValidIdx >= 0 &&
+    rawDailySeries[lastValidIdx].precipMm === null &&
+    rawDailySeries[lastValidIdx].tempMeanC === null &&
+    rawDailySeries[lastValidIdx].tempMaxC === null &&
+    rawDailySeries[lastValidIdx].soilMoistureRoot === null
+  ) {
+    lastValidIdx--;
+  }
+  const dailySeries = lastValidIdx >= 0 ? rawDailySeries.slice(0, lastValidIdx + 1) : rawDailySeries;
+  const lastAvailableDate = dailySeries.length > 0 ? dailySeries[dailySeries.length - 1].date : null;
+  for (const d of dailySeries) {
+    if (d.tempMeanC === null || d.precipMm === null) missingPowerObs += 1;
+  }
+
   const monthlySeries: MonthlyClimatePoint[] = [];
   const pMonthly = monthlyRes?.properties?.parameter ?? null;
-  if (pMonthly?.PRECTOTCORR) {
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    for (const k of Object.keys(pMonthly.PRECTOTCORR).sort()) {
-      const mm = k.slice(4, 6);
-      if (mm === '13') continue;
+  const mFill = typeof monthlyRes?.header?.fill_value === 'number' ? monthlyRes.header.fill_value : -999;
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthDays = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const climoBuckets = Array.from({ length: 12 }, () => ({
+    precip: [] as number[],
+    temp: [] as number[],
+    tmax: [] as number[],
+    root: [] as number[],
+  }));
+
+  if (pMonthly && typeof pMonthly === 'object') {
+    const keys = Object.keys(pMonthly.PRECTOTCORR || pMonthly.T2M || {})
+      .filter((k) => /^\d{6}$/.test(k) && !k.endsWith('13'))
+      .sort();
+    for (const k of keys) {
+      const mo = Number(k.slice(4, 6));
+      if (mo < 1 || mo > 12) continue;
+      const pVal = cleanVal(pMonthly.PRECTOTCORR?.[k], mFill);
+      const tVal = cleanVal(pMonthly.T2M?.[k], mFill);
+      const txVal = cleanVal(pMonthly.T2M_MAX?.[k], mFill);
+      const rVal = cleanVal(pMonthly.GWETROOT?.[k], mFill);
+      if (pVal !== null) climoBuckets[mo - 1].precip.push(pVal);
+      if (tVal !== null) climoBuckets[mo - 1].temp.push(tVal);
+      if (txVal !== null) climoBuckets[mo - 1].tmax.push(txVal);
+      if (rVal !== null) climoBuckets[mo - 1].root.push(rVal);
       monthlySeries.push({
-        month: `${k.slice(0, 4)}-${mm}`,
-        label: `${monthNames[Number(mm) - 1] ?? mm} ${k.slice(2, 4)}`,
-        precipMm: cleanVal(pMonthly.PRECTOTCORR?.[k]),
-        tempMeanC: cleanVal(pMonthly.T2M?.[k]),
-        soilMoistureRoot: cleanVal(pMonthly.GWETROOT?.[k]),
+        month: `${k.slice(0, 4)}-${String(mo).padStart(2, '0')}`,
+        label: `${monthNames[mo - 1]} ${k.slice(2, 4)}`,
+        precipMm: pVal,
+        tempMeanC: tVal,
+        soilMoistureRoot: rVal,
       });
     }
   }
+
+  const climatology10Yr = climoBuckets.map((b, idx) => {
+    const avgP = b.precip.length > 0 ? Number((b.precip.reduce((s, v) => s + v, 0) / b.precip.length).toFixed(2)) : null;
+    return {
+      monthIndex: idx + 1,
+      label: monthNames[idx],
+      avgPrecipMmPerDay: avgP,
+      avgMonthlyRainMm: avgP !== null ? Number((avgP * monthDays[idx]).toFixed(1)) : null,
+      avgTempC: b.temp.length > 0 ? Number((b.temp.reduce((s, v) => s + v, 0) / b.temp.length).toFixed(1)) : null,
+      avgMaxTempC: b.tmax.length > 0 ? Number((b.tmax.reduce((s, v) => s + v, 0) / b.tmax.length).toFixed(1)) : null,
+      avgRootWetness: b.root.length > 0 ? Number((b.root.reduce((s, v) => s + v, 0) / b.root.length).toFixed(3)) : null,
+    };
+  });
 
   const validRain = dailySeries.map((d) => d.precipMm).filter((v): v is number => v !== null);
   const validTemp = dailySeries.map((d) => d.tempMeanC).filter((v): v is number => v !== null);
@@ -351,6 +418,12 @@ export async function fetchStaticEnvironmentalAnalysis(farm: Farm): Promise<{
     }
   }
 
+  const last30Slice = dailySeries.slice(-30);
+  const valid30Rain = last30Slice.map((d) => d.precipMm).filter((v): v is number => v !== null);
+  const valid30Temp = last30Slice.map((d) => d.tempMeanC).filter((v): v is number => v !== null);
+  const last30DaysRainMm = valid30Rain.length > 0 ? Number(valid30Rain.reduce((a, b) => a + b, 0).toFixed(1)) : null;
+  const last30DaysAvgTempC = valid30Temp.length > 0 ? Number((valid30Temp.reduce((a, b) => a + b, 0) / valid30Temp.length).toFixed(1)) : null;
+
   const totalRainMm = validRain.length > 0 ? Number(validRain.reduce((a, b) => a + b, 0).toFixed(1)) : null;
   const estimatedAnnualEt0Mm = validEt0.length > 0 ? Number(validEt0.reduce((a, b) => a + b, 0).toFixed(0)) : null;
   const avgRootSoilWetness =
@@ -358,7 +431,7 @@ export async function fetchStaticEnvironmentalAnalysis(farm: Farm): Promise<{
 
   const datasets: DatasetProvenance[] = STATIC_DATASETS.map((ds) => ({
     ...ds,
-    observationDate: `${dailySeries[0]?.date ?? 'N/A'} to ${dailySeries[dailySeries.length - 1]?.date ?? 'N/A'}`,
+    observationDate: `${dailySeries[0]?.date ?? 'N/A'} to ${lastAvailableDate ?? 'N/A'}`,
     dataQuality: ds.id === 'power' || ds.id === 'gpm' || ds.id === 'smap' ? (dailySeries.length > 0 ? 'Verified Live' : 'Unavailable Locally') : 'Regional Context',
     missingObservations: ds.id === 'power' ? missingPowerObs : 0,
   }));
@@ -367,15 +440,15 @@ export async function fetchStaticEnvironmentalAnalysis(farm: Farm): Promise<{
     {
       id: 'ins-rain',
       category: 'Rainfall',
-      title: 'Annual Precipitation & Dry-Spell Pattern',
+      title: '180-Day Precipitation & Dry-Spell Pattern',
       observationType: 'Direct Satellite Observation',
       whatWasObserved:
         totalRainMm !== null
-          ? `${totalRainMm} mm total rainfall across the past 12 months with a longest dry break of ${longestDrySpellDays} days.`
+          ? `${totalRainMm} mm total rainfall across the last 180 days (last 30 days: ${last30DaysRainMm ?? 'N/A'} mm) with a longest dry break of ${longestDrySpellDays} days.`
           : 'NASA POWER rainfall records could not be retrieved for this query.',
-      whenObserved: `${dailySeries[0]?.date ?? 'Past 365d'} – ${dailySeries[dailySeries.length - 1]?.date ?? 'Recent'}`,
+      whenObserved: `${dailySeries[0]?.date ?? 'Past 180d'} – ${lastAvailableDate ?? 'Recent'}`,
       whatItCouldMean:
-        totalRainMm !== null && totalRainMm < 600
+        totalRainMm !== null && totalRainMm < 350
           ? 'Moisture-conserving rotations (sorghum, cowpea, millet) are better suited than continuous high-water cereals.'
           : 'Supports maize-legume alternation if planting aligns with rainfall onset.',
       whatItCannotEstablish: 'Cannot resolve localized convective showers at single-plot scale.',
@@ -391,7 +464,7 @@ export async function fetchStaticEnvironmentalAnalysis(farm: Farm): Promise<{
         avgRootSoilWetness !== null
           ? `Assimilated 0–100 cm wetness averaged ${(avgRootSoilWetness * 100).toFixed(1)}%.`
           : 'Assimilated soil wetness unavailable.',
-      whenObserved: 'Trailing 365-day daily series',
+      whenObserved: 'Trailing 180-day daily series',
       whatItCouldMean: 'Indicates regional subsoil water availability for deeper-rooted crops.',
       whatItCannotEstablish: 'Cannot measure plot soil organic matter, pH, or crusting.',
       additionalInfoNeeded: 'Perform local soil pH and organic matter checks.',
@@ -412,10 +485,13 @@ export async function fetchStaticEnvironmentalAnalysis(farm: Farm): Promise<{
         : terrainSlopePct < 2
         ? `Gentle slope (${terrainSlopePct}%) — low topographic runoff gradient.`
         : `Moderate-to-rolling slope (${terrainSlopePct}%) — contour bunds and mulch cover recommended.`,
+    lastAvailableDate,
     periodSummary: {
       startDate: dailySeries[0]?.date ?? formatIsoDate(startStr),
-      endDate: dailySeries[dailySeries.length - 1]?.date ?? formatIsoDate(endStr),
+      endDate: lastAvailableDate ?? formatIsoDate(endStr),
       totalRainMm,
+      last30DaysRainMm,
+      last30DaysAvgTempC,
       avgTempC: validTemp.length > 0 ? Number((validTemp.reduce((a, b) => a + b, 0) / validTemp.length).toFixed(1)) : null,
       maxTempObservedC: validTempMax.length > 0 ? Number(Math.max(...validTempMax).toFixed(1)) : null,
       heatStressDaysAbove35C: validTempMax.filter((v) => v >= 35).length,
@@ -431,6 +507,7 @@ export async function fetchStaticEnvironmentalAnalysis(farm: Farm): Promise<{
     },
     dailySeries,
     monthlySeries,
+    climatology10Yr,
     datasets,
     insights,
     areasForInvestigation: [
@@ -444,6 +521,10 @@ export async function fetchStaticEnvironmentalAnalysis(farm: Farm): Promise<{
     ...(forecast ? { realtimeForecast: forecast } : {}),
     hazards: evaluateStaticHazards(farm, baseAnalysis, forecast),
   };
+
+  if (dailySeries.length > 0) {
+    await writeFarmPowerCache(farm, analysis);
+  }
 
   return {
     analysis,
