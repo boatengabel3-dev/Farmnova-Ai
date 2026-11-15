@@ -1,0 +1,6 @@
+{
+  "name": "TerraVane",
+  "description": "Satellite intelligence for resilient crop rotations — adapting farms with NASA Earth observations, environmental analysis, and agronomic decision support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
