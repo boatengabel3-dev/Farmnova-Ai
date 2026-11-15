@@ -3,6 +3,8 @@ import { ArrowRight, CheckCircle2, Compass, Layers, ShieldCheck, Sprout } from '
 import { BrandMark } from './BrandMark';
 import { api, setStoredToken } from '../lib/api';
 import { LanguageSelector, useI18n } from '../lib/i18n';
+import heroFarmlandImg from '../assets/images/hero_farmland_aerial_1794715062487.jpg';
+import soilStewardshipImg from '../assets/images/crop_soil_stewardship_1794715063327.jpg';
 import type { User } from '../types';
 
 interface Props {
@@ -185,7 +187,7 @@ export function LandingAuthView({ onAuthenticated }: Props) {
               {/* Editorial Hero Photography Frame */}
               <div className="mt-8 relative rounded-xl overflow-hidden border border-[#DFD9CB] bg-[#EAE4D7] aspect-[16/9]">
                 <img
-                  src="/src/assets/images/hero_farmland_aerial_1794715062487.jpg"
+                  src={heroFarmlandImg}
                   alt="Aerial view of terraced maize and legume crop rotation strips across sunlit East African farmland"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover"
@@ -563,7 +565,7 @@ export function LandingAuthView({ onAuthenticated }: Props) {
         <div className="grid md:grid-cols-12 gap-8 items-center">
           <div className="md:col-span-5 rounded-xl overflow-hidden border border-[#DFD9CB] aspect-[4/3]">
             <img
-              src="/src/assets/images/crop_soil_stewardship_1794715063327.jpg"
+              src={soilStewardshipImg}
               alt="Farmer examining dark loamy agricultural soil above green legume rows"
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover"
