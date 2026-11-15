@@ -23,12 +23,26 @@ export interface EdgeInvokeResult {
   data: Record<string, unknown>;
 }
 
+function normalizeSupabaseUrl(raw: string | undefined): string {
+  const trimmed = (raw || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  if (/^[a-z0-9-]+$/i.test(trimmed)) return `https://${trimmed}.supabase.co`;
+  return '';
+}
+
 function resolveSupabaseConfig() {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
+  const url =
+    normalizeSupabaseUrl(process.env.SUPABASE_URL) ||
+    normalizeSupabaseUrl(process.env.VITE_SUPABASE_URL) ||
+    normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const key = (
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     ''
   ).trim();
   const functionSlug = (

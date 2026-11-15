@@ -1,4 +1,4 @@
-import { getSupabaseClient, isSupabaseClientConfigured, SUPABASE_EDGE_FUNCTION_SLUG } from './supabase';
+import { getSupabaseClient, isSupabaseClientConfigured, SUPABASE_EDGE_FUNCTION_SLUG, supabaseUrlValue } from './supabase';
 import {
   buildStaticStrategiesAndSimulation,
   evaluateStaticHazards,
@@ -563,7 +563,7 @@ export async function handleStaticApiFallback<T>(
       functionSlug: SUPABASE_EDGE_FUNCTION_SLUG,
       mode: configured ? 'supabase-remote' : 'local-edge-bridge',
       endpoint: configured
-        ? `${(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '')}/functions/v1/${SUPABASE_EDGE_FUNCTION_SLUG}`
+        ? `${supabaseUrlValue.replace(/\/+$/, '')}/functions/v1/${SUPABASE_EDGE_FUNCTION_SLUG}`
         : `client-edge-bridge (${SUPABASE_EDGE_FUNCTION_SLUG})`,
       supportedActions: ['health', 'nasa-telemetry', 'rotation-brief', 'ai-advisor'],
     } as T;

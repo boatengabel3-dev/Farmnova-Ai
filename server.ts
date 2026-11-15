@@ -1,9 +1,18 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const parsedEnv = dotenv.config({ path: path.resolve(__dirname, '.env') }).parsed ?? {};
+for (const [k, v] of Object.entries(parsedEnv)) {
+  if (!process.env[k]?.trim() && v.trim()) {
+    process.env[k] = v;
+  }
+}
+
 import { db, generateToken, hashPassword, initDatabase, verifyPassword, writeAuditLog } from './server/db.ts';
 import { fetchFarmEnvironmentalAnalysis } from './server/nasa.ts';
 import { generateRotationStrategies, simulateClimateScenarios } from './server/rotationEngine.ts';
@@ -14,7 +23,6 @@ import type { ClimateScenarioParams, Crop, Farm, GeoPoint, User, UserRole } from
 
 initDatabase();
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
